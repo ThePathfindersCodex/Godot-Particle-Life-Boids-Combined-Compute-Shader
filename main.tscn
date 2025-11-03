@@ -1,0 +1,664 @@
+[gd_scene load_steps=6 format=3 uid="uid://dttimedg6wf3x"]
+
+[ext_resource type="Script" uid="uid://bnu3l1ea7e55e" path="res://main.gd" id="1_h2yge"]
+[ext_resource type="Script" uid="uid://cetpw8ci6emy4" path="res://particle_boids.gd" id="1_ig7tw"]
+[ext_resource type="Script" uid="uid://danbgaf8xni3k" path="res://LabelFPS.gd" id="3_h2yge"]
+
+[sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_ig7tw"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_h2yge"]
+bg_color = Color(0.303233, 0.303233, 0.303233, 1)
+expand_margin_left = 5.0
+expand_margin_top = 5.0
+expand_margin_right = 5.0
+expand_margin_bottom = 5.0
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_h2yge")
+
+[node name="ParticleBoids" type="TextureRect" parent="."]
+unique_name_in_owner = true
+offset_left = 14.0
+offset_top = 78.0
+offset_right = 814.0
+offset_bottom = 878.0
+texture = SubResource("PlaceholderTexture2D_ig7tw")
+script = ExtResource("1_ig7tw")
+
+[node name="LabelFPS" type="Label" parent="."]
+offset_left = 14.0
+offset_top = 916.0
+offset_right = 54.0
+offset_bottom = 939.0
+text = "FPS"
+script = ExtResource("3_h2yge")
+
+[node name="SliderSimMix" type="HSlider" parent="."]
+unique_name_in_owner = true
+offset_left = 1074.0
+offset_top = 32.0
+offset_right = 1304.0
+offset_bottom = 56.0
+max_value = 1.0
+step = 0.1
+value = 0.5
+tick_count = 11
+ticks_on_borders = true
+
+[node name="SimControls" type="PanelContainer" parent="."]
+offset_left = 19.0
+offset_top = 20.0
+offset_right = 961.0
+offset_bottom = 60.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_h2yge")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="SimControls"]
+unique_name_in_owner = true
+modulate = Color(0.810502, 1, 0.997018, 1)
+layout_mode = 2
+
+[node name="ButtonPauseResume" type="Button" parent="SimControls/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "PAUSE"
+
+[node name="VSeparator" type="VSeparator" parent="SimControls/HBoxContainer"]
+custom_minimum_size = Vector2(20, 0)
+layout_mode = 2
+
+[node name="ButtonRestart" type="Button" parent="SimControls/HBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+text = "RESTART"
+
+[node name="OptionStartMethod" type="OptionButton" parent="SimControls/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+selected = 3
+item_count = 8
+popup/item_0/text = "Random"
+popup/item_0/id = 0
+popup/item_1/text = "Random Symmetric"
+popup/item_1/id = 1
+popup/item_2/text = "Ring"
+popup/item_2/id = 2
+popup/item_3/text = "Ring Symmetric"
+popup/item_3/id = 3
+popup/item_4/text = "Spiral"
+popup/item_4/id = 4
+popup/item_5/text = "Spiral Symmetric"
+popup/item_5/id = 5
+popup/item_6/text = "Bands"
+popup/item_6/id = 6
+popup/item_7/text = "Bands Symmetric"
+popup/item_7/id = 7
+
+[node name="OptionStartSpeciesCount" type="OptionButton" parent="SimControls/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+selected = 2
+item_count = 11
+popup/item_0/text = "0"
+popup/item_0/id = 0
+popup/item_0/disabled = true
+popup/item_1/text = "Species: 1"
+popup/item_1/id = 1
+popup/item_2/text = "Species: 2"
+popup/item_2/id = 2
+popup/item_3/text = "Species: 3"
+popup/item_3/id = 3
+popup/item_4/text = "Species: 4"
+popup/item_4/id = 4
+popup/item_5/text = "Species: 5"
+popup/item_5/id = 5
+popup/item_6/text = "Species: 6"
+popup/item_6/id = 6
+popup/item_7/text = "Species: 7"
+popup/item_7/id = 7
+popup/item_8/text = "Species: 8"
+popup/item_8/id = 8
+popup/item_9/text = "Species: 9"
+popup/item_9/id = 9
+popup/item_10/text = "Species: 10"
+popup/item_10/id = 10
+
+[node name="CheckBoxLockMatrix" type="CheckBox" parent="SimControls/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+text = "Lock Matrix"
+
+[node name="OptionStartInteractionRange" type="OptionButton" parent="SimControls/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+selected = 2
+item_count = 4
+popup/item_0/text = "0"
+popup/item_0/id = 0
+popup/item_0/disabled = true
+popup/item_1/text = "Matrix Range: 1"
+popup/item_1/id = 1
+popup/item_2/text = "Matrix Range: 2"
+popup/item_2/id = 2
+popup/item_3/text = "Matrix Range: 3"
+popup/item_3/id = 3
+
+[node name="OptionStartRadiusMultiplier" type="OptionButton" parent="SimControls/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+selected = 2
+item_count = 10
+popup/item_0/text = "0"
+popup/item_0/id = 0
+popup/item_0/disabled = true
+popup/item_1/text = "Start Size: 2"
+popup/item_1/id = 1
+popup/item_2/text = "Start Size: 4"
+popup/item_2/id = 2
+popup/item_3/text = "Start Size: 6"
+popup/item_3/id = 3
+popup/item_4/text = "Start Size: 8"
+popup/item_4/id = 4
+popup/item_5/text = "Start Size: 10"
+popup/item_5/id = 5
+popup/item_6/text = "Start Size: 12"
+popup/item_6/id = 6
+popup/item_7/text = "Start Size: 14"
+popup/item_7/id = 7
+popup/item_8/text = "Start Size: 16"
+popup/item_8/id = 8
+popup/item_9/text = "Start Size: 18"
+popup/item_9/id = 9
+
+[node name="OptionStartPointCount" type="OptionButton" parent="SimControls/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+selected = 2
+item_count = 4
+popup/item_0/text = "5120"
+popup/item_0/id = 2
+popup/item_1/text = "15360"
+popup/item_1/id = 3
+popup/item_2/text = "25600"
+popup/item_2/id = 4
+popup/item_3/text = "51200"
+popup/item_3/id = 5
+
+[node name="SimParameters" type="GridContainer" parent="."]
+offset_left = 836.0
+offset_top = 96.0
+offset_right = 1344.0
+offset_bottom = 628.0
+columns = 3
+
+[node name="LabelPoints" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "POINTS"
+horizontal_alignment = 2
+
+[node name="LabelPointsValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="ControlSpacer" type="Control" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LabelSpecies" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "SPECIES"
+horizontal_alignment = 2
+
+[node name="LabelSpeciesValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="ControlSpacer2" type="Control" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LabelSpeed" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "SPEED"
+horizontal_alignment = 2
+
+[node name="LabelSpeedValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderSpeed" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 0.5
+step = 0.01
+value = 0.25
+
+[node name="LabelDamping" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "DAMPING"
+horizontal_alignment = 2
+
+[node name="LabelDampingValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderDampen" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.7
+max_value = 1.0
+step = 0.01
+value = 0.95
+
+[node name="LabelSenseRadius" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "INTERACT RADIUS"
+horizontal_alignment = 2
+
+[node name="LabelSenseRadiusValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderSenseRadius" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 10.0
+max_value = 500.0
+step = 10.0
+value = 70.0
+
+[node name="LabelForceSoftenMultiplier" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "FORCE SOFTEN MUL"
+horizontal_alignment = 2
+
+[node name="LabelForceSoftenMultiplierValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderForceSoftenMultiplier" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 4.0
+step = 0.5
+value = 1.0
+
+[node name="LabelForceSoften" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "FORCE SOFTEN"
+horizontal_alignment = 2
+
+[node name="LabelForceSoftenValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="ControlSpacer3" type="Control" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LabelDrawSize" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "DRAW SIZE"
+horizontal_alignment = 2
+
+[node name="LabelDrawSizeValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderDrawSize" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 15.0
+value = 10.0
+
+[node name="LabelCollideModifier" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "COLLIDE MOD"
+horizontal_alignment = 2
+
+[node name="LabelCollideModifierValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderCollideModifier" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 10.0
+step = 0.5
+value = 1.0
+
+[node name="LabelCollideRadius" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "COLLIDE RADIUS"
+horizontal_alignment = 2
+
+[node name="LabelCollideRadiusValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="ControlSpacer5" type="Control" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LabelCenterPull" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "CENTER PULL"
+horizontal_alignment = 2
+
+[node name="LabelCenterPullValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderCenterPull" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 0.1
+step = 0.01
+value = 0.01
+
+[node name="LabelMaxForce" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MAX FORCE"
+horizontal_alignment = 2
+
+[node name="LabelMaxForceValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderMaxForce" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 10000.0
+step = 0.1
+value = 5.0
+
+[node name="HSeparator4" type="HSeparator" parent="SimParameters"]
+layout_mode = 2
+
+[node name="HSeparator5" type="HSeparator" parent="SimParameters"]
+layout_mode = 2
+
+[node name="HSeparator6" type="HSeparator" parent="SimParameters"]
+layout_mode = 2
+
+[node name="LabelVisionRadius" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "VISION RADIUS"
+horizontal_alignment = 2
+
+[node name="LabelVisionRadiusValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderVisionRadius" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 5.0
+max_value = 500.0
+step = 5.0
+value = 100.0
+
+[node name="LabelAlignmentForce" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ALIGNMENT FORCE"
+horizontal_alignment = 2
+
+[node name="LabelAlignmentForceValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderAlignmentForce" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 2.0
+step = 0.1
+value = 1.0
+
+[node name="LabelCohesionForce" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "COHESION FORCE"
+horizontal_alignment = 2
+
+[node name="LabelCohesionForceValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderCohesionForce" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 2.0
+step = 0.1
+value = 1.0
+
+[node name="LabelSeparationForce" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "SEPARATION FORCE"
+horizontal_alignment = 2
+
+[node name="LabelSeparationForceValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderSeparationForce" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 3.0
+step = 0.1
+value = 1.0
+
+[node name="LabelMinSpeed" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MIN SPEED"
+horizontal_alignment = 2
+
+[node name="LabelMinSpeedValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderMinSpeed" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 5.0
+step = 0.1
+value = 0.5
+
+[node name="LabelMaxSpeed" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MAX SPEED"
+horizontal_alignment = 2
+
+[node name="LabelMaxSpeedValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderMaxSpeed" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 2.0
+max_value = 1000.0
+value = 1000.0
+
+[node name="LabelSliderMovementRandomness" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MOVEMENT RANDOMNESS"
+horizontal_alignment = 2
+
+[node name="LabelSliderMovementRandomnessValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderMovementRandomness" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 0.25
+step = 0.01
+value = 0.01
+
+[node name="LabelSliderMovementScaling" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MOVEMENT SCALING"
+horizontal_alignment = 2
+
+[node name="LabelSliderMovementScalingValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="SliderMovementScaling" type="HSlider" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.1
+max_value = 4.0
+step = 0.1
+value = 1.0
+
+[node name="HSeparator10" type="HSeparator" parent="SimParameters"]
+layout_mode = 2
+
+[node name="HSeparator11" type="HSeparator" parent="SimParameters"]
+layout_mode = 2
+
+[node name="HSeparator12" type="HSeparator" parent="SimParameters"]
+layout_mode = 2
+
+[node name="LabelCamCenter" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "CAM CENTER"
+horizontal_alignment = 2
+
+[node name="LabelCamCenterValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="ControlSpacer6" type="Control" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LabelZoom" type="Label" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ZOOM"
+horizontal_alignment = 2
+
+[node name="LabelZoomValue" type="Label" parent="SimParameters"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "0"
+horizontal_alignment = 2
+
+[node name="ControlSpacer7" type="Control" parent="SimParameters"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LabelIntMatrix" type="Label" parent="."]
+unique_name_in_owner = true
+offset_left = 876.0
+offset_top = 707.0
+offset_right = 1197.0
+offset_bottom = 1074.0
+theme_override_font_sizes/font_size = 12
+text = "1: 1 2 3 4 5
+2: 1 2 3 4 5
+3: 1 2 3 4 5
+4: 1 2 3 4 5
+5: 1 2 3 4 5"
+horizontal_alignment = 2
+
+[connection signal="pressed" from="SimControls/HBoxContainer/ButtonPauseResume" to="." method="_on_button_pause_resume_pressed"]
+[connection signal="pressed" from="SimControls/HBoxContainer/ButtonRestart" to="." method="_on_button_restart_pressed"]
+[connection signal="item_selected" from="SimControls/HBoxContainer/OptionStartMethod" to="." method="_on_option_start_method_item_selected"]
+[connection signal="item_selected" from="SimControls/HBoxContainer/OptionStartSpeciesCount" to="." method="_on_option_start_species_count_item_selected"]
+[connection signal="item_selected" from="SimControls/HBoxContainer/OptionStartInteractionRange" to="." method="_on_option_start_interaction_range_item_selected"]
+[connection signal="item_selected" from="SimControls/HBoxContainer/OptionStartRadiusMultiplier" to="." method="_on_option_start_radius_multiplier_item_selected"]
+[connection signal="item_selected" from="SimControls/HBoxContainer/OptionStartPointCount" to="." method="_on_option_start_point_count_item_selected"]
