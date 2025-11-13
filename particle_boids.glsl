@@ -77,7 +77,7 @@ layout(set = 0, binding = 13, rgba32f) uniform image2D OUTPUT_TEXTURE;
 // === Parameters ===
 layout(push_constant, std430) uniform Params {
 
-    float run_mode;             // 0 = sim, 1 = collide, 2 = clear, 3 = draw
+    float run_mode;             // determine which logic to run on GPU
     float dt;                   // Timestep
 	float mix_t;         		// Mix Boids with PLife
     float agents_count;         // Total agent count
@@ -113,8 +113,6 @@ layout(push_constant, std430) uniform Params {
     float camera_center_y;      // View pan Y
     float zoom;                 // Camera zoom
 } params;
-
-//////////////////////
 
 // Clamp vector magnitude
 vec2 limit(vec2 v, float max_val) {
@@ -161,6 +159,7 @@ float apply_force(float f, float dist, float softening, float max_force) {
     return clamp(force_mag, -max_force, max_force);
 }
 
+// Main simulation logic (using spatial grid) + prepare collisions.
 void run_sim() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= uint(params.agents_count)) return;
@@ -291,7 +290,6 @@ void run_sim() {
 }
 
 
-//////////////////////
 void resolve_collide() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= uint(params.agents_count)) return;
@@ -310,7 +308,7 @@ void resolve_collide() {
 
     float world_size_f = params.image_size * params.world_size_mult;
     float col_radius = params.collision_radius;
-    float per_neighbor_max = col_radius * 1.0; //0.5;
+    float per_neighbor_max = col_radius * 2.0; //0.5;
     float max_move = col_radius * 1.0; //0.9;
     float apply_frac = 1.0; // 0.5;
 	// float damping = 1.0;
@@ -363,7 +361,6 @@ void resolve_collide() {
     out_pos_buffer.data[id].v = pos;
     // out_vel_buffer.data[id].v = vel;
 }
-//////////////////////
 
 vec3 heatmap_color(float t) {
     // Clamp between 0 and 1
@@ -409,12 +406,6 @@ void draw_circle(vec2 center, float radius, vec4 color) {
     }
 }
 
-void clear_texture() {
-    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    //imageStore(OUTPUT_TEXTURE, pixel, vec4(vec3(0.1),1.0)); // slight off-black	
-    imageStore(OUTPUT_TEXTURE, pixel, vec4(vec3(1.0),1.0)); // white
-}
-
 void draw_texture() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= uint(params.agents_count)) return;
@@ -441,22 +432,12 @@ void draw_texture() {
     draw_circle(screen_pos, draw_size, vec4(color, 1.0));
 }
 
-// ------------------ ZERO OUT COUNT AND COLLIDE BUFFERS ------------------
-void zero_counts() {
-    uint cid = gl_GlobalInvocationID.x;
-    if (cid >= uint(params.cells_per_row * params.cells_per_row)) return;
-    cell_count_buffer.cell_counts[cid] = 0u;
-
-    for (uint i = 0u; i < params.max_collisions; ++i)
-		collision_partner_buffer.partners[cid * uint(params.max_collisions) + i] = 0u;
-}
-// ------------------ COUNT CELLS ------------------
 void count_cells() {
     uint id = gl_GlobalInvocationID.x; // compute directly
     if (id >= uint(params.agents_count)) return;
 
-    vec2 p = in_pos_buffer.data[id].v;  // use in_pos_buffer
-    float half_size = params.image_size * params.world_size_mult * 0.5; // matches previous world_size calc
+    vec2 p = in_pos_buffer.data[id].v;  // in_pos_buffer
+    float half_size = params.image_size * params.world_size_mult * 0.5; // matches world_size calc
     float rx = mod(p.x + half_size + params.image_size * params.world_size_mult, params.image_size * params.world_size_mult);
     float ry = mod(p.y + half_size + params.image_size * params.world_size_mult, params.image_size * params.world_size_mult);
     
@@ -469,67 +450,28 @@ void count_cells() {
     atomicAdd(cell_count_buffer.cell_counts[cell], 1u); // increment per-cell count
 }
 
-void prefix_sum() {
-    uint tid = gl_LocalInvocationID.x;
-    uint gid = gl_GlobalInvocationID.x;
-    uint num_cells = uint(params.cells_per_row * params.cells_per_row);
-    if (gid >= num_cells) return;
-
-    prefix_sum_temp[tid] = cell_count_buffer.cell_counts[gid]; // use cell_count_buffer
-    barrier();
-
-    // Hillis-Steele inclusive scan
-    for (uint offset = 1u; offset < gl_WorkGroupSize.x; offset <<= 1u) {
-        uint n = 0u;
-        if (tid >= offset) n = prefix_sum_temp[tid - offset];
-        barrier();
-        prefix_sum_temp[tid] += n;
-        barrier();
-    }
-
-    // exclusive scan
-    uint excl = (tid == 0u) ? 0u : prefix_sum_temp[tid - 1u];
-    cell_offset_buffer.cell_offsets[gid] = excl; // write to offsets buffer
-}
-// ------------------ COPY OFFSETS TO CURSOR ------------------
-void copy_offsets_to_cursor() {
-    uint cid = gl_GlobalInvocationID.x;
-    uint num_cells = uint(params.cells_per_row * params.cells_per_row);
-    if (cid >= num_cells) return;
-
-    cursor_buffer.data[cid] = cell_offset_buffer.cell_offsets[cid]; // use cursor buffer
-}
-// ------------------ SCATTER SORTED INDICES ------------------
 void scatter_sorted_indices() {
     uint id = gl_GlobalInvocationID.x; // compute directly
 	if (id >= uint(params.agents_count)) return;
 
-    uint cell = agent_cell_buffer.data[id]; // use agent_cell_buffer
-    uint pos = atomicAdd(cursor_buffer.data[cell], 1u); // use cursor_buffer
-    sorted_index_buffer.sorted_indices[pos] = id;        // write to final sorted indices
+    uint cell = agent_cell_buffer.data[id]; // agent_cell_buffer
+    uint pos = atomicAdd(cursor_buffer.data[cell], 1u); // cursor_buffer
+    sorted_index_buffer.sorted_indices[pos] = id; // write to final sorted indices
 }
 
 void main() {
+	// ---- GPU processing modes ----
     if (params.run_mode == 0 && params.dt > 0.0) {
         run_sim();
     } else if (params.run_mode == 1 && params.dt > 0.0) {
         resolve_collide();
     } else if (params.run_mode == 2) {
-        clear_texture();
-    } else if (params.run_mode == 3) {
         draw_texture();
-    }
-	
-	// ---- new GPU-only preprocessing modes ----
-    else if (params.run_mode == 10) {    // ZERO_COUNTS
-        zero_counts();
-    } else if (params.run_mode == 11) {  // COUNT_CELLS
+		
+	// ---- GPU preprocessing modes ----
+    } else if (params.run_mode == 10) {  // COUNT CELLS
         count_cells();
-    } else if (params.run_mode == 12) {  // PREFIX_SUM
-        prefix_sum();
-    } else if (params.run_mode == 13) {  // COPY_OFFSETS
-        copy_offsets_to_cursor();
-    } else if (params.run_mode == 14) {  // SCATTER
+    } else if (params.run_mode == 11) {  // SCATTER
         scatter_sorted_indices();
     }	
 }

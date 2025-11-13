@@ -20,7 +20,6 @@ var slider_bindings = {
 	"%SliderMovementScaling": "movement_scaling",
 }
 
-
 func _ready():
 	# Connect all sliders and set defaults
 	for slider_path in slider_bindings.keys():
@@ -29,7 +28,7 @@ func _ready():
 		slider.value = %ParticleBoids.get(property)
 		slider.connect("value_changed", Callable(self, "_on_slider_changed").bind(property))
 	
-	## Option dropdown default values
+	# Option dropdown default values
 	%OptionStartInteractionRange.selected = int(%ParticleBoids.rand_start_interaction_range)
 	%OptionStartRadiusMultiplier.selected =  int(%ParticleBoids.rand_start_radius_mul)
 	%OptionStartSpeciesCount.selected = %ParticleBoids.start_species_count
@@ -37,7 +36,7 @@ func _ready():
 	%OptionStartPointCount.selected = 4
 	
 func _process(_delta):
-	## SET READOUT VALUES
+	# SET READOUT VALUES
 	%LabelPointsValue.text = str(snapped(%ParticleBoids.agent_count,1))
 	%LabelSpeciesValue.text = str(snapped(%ParticleBoids.species_count,1))
 	%LabelSpeedValue.text = str(snapped(%ParticleBoids.dt,.01))
@@ -111,7 +110,12 @@ func _on_option_start_point_count_item_selected(index: int) -> void:
 
 func _on_option_start_species_count_item_selected(index: int) -> void:
 	%ParticleBoids.start_species_count=index
-	
 	%CheckBoxLockMatrix.disabled=false
 	if (%ParticleBoids.start_species_count != %ParticleBoids.species_count):
 			%CheckBoxLockMatrix.disabled=true
+
+func _on_slider_sim_mix_value_changed(value: float) -> void:
+	var plife_perc = int(value * 100)
+	var boids_perc = 100 - plife_perc
+	%LabelSimSplit.text = str(boids_perc)+"% Boids - "+str(plife_perc)+"% Particle Life"
+	

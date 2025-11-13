@@ -10,13 +10,13 @@ var empty_img : Image
 		image_size = v
 var world_size_mult : int = 20
 var agent_count : int = 1024*25
-var species_count : int = 10 #3
-var draw_radius : float = 5.0 # 10.0 # 3.0
+var species_count : int = 10
+var draw_radius : float = 2.0
 
 # STARTUP PARAMS
 var starting_method : int = 4 # method to use when restarting new field?
 var rand_start_interaction_range : float = 2.0 # force will be random between -X and +X
-var rand_start_radius_mul : float = 8.0 # different startup patterns use this multiplier
+var rand_start_radius_mul : float = 16.0 # different startup patterns use this multiplier
 var start_agent_count : int = agent_count # only used when restarting new field
 var start_species_count : int = species_count # only used when restarting new field
 
@@ -39,19 +39,19 @@ var separation_force : float = 1.0
 # FORCE ADJUSTMENTS
 var movement_randomness : float = 0.01
 var movement_scaling : float = 1.0
-var force_softening_mul : float = 1.0
+var force_softening_mul : float = 3.0
 var force_softening : float = species_interaction_radius * force_softening_mul:
 	get():
 		return species_interaction_radius * force_softening_mul
 var center_attraction : float = 0.00 # set to 0 to turn off
 var damping : float = 0.98 # FRICTION
 var min_speed : float = 0.0
-var max_speed : float = 1000.0
+var max_speed : float = 500.0
 var max_force : float = 1000.0
 
 # COLLISION FORCE
-const MAX_COLLISIONS := 64  # tune as needed
-var collision_modifier : float = 1.0
+const MAX_COLLISIONS := 16 # 32 # 128  # tune as needed
+var collision_modifier : float = 2.0
 var collision_radius : float =  draw_radius + collision_modifier:
 	get():
 		return draw_radius + collision_modifier
@@ -62,9 +62,10 @@ var zoom : float = 0.1
 const MIN_ZOOM := 0.05
 const MAX_ZOOM := 2.0
 
-# SPATIAL HASHING SIZES
+# SPATIAL HASHING
 var cell_size : int = 0
 var cells_per_row : int = 0
+var num_cells : int = 0
 
 # INTERACTION MATRIX
 var interaction_matrix : PackedFloat32Array = []
@@ -123,7 +124,7 @@ func restart_simulation():
 		_: start_data = StartupManager.build_particles(self, StartupManager.pos_random, false)
 	rebuild_buffers(start_data)
 
-	## Unlock Checkbox
+	# Unlock Checkbox
 	%CheckBoxLockMatrix.disabled = false 
 
 func rebuild_buffers(data: Dictionary):
@@ -162,7 +163,10 @@ func rebuild_buffers(data: Dictionary):
 	var world_size := float(image_size) * float(world_size_mult) # same as GLSL's world
 	cell_size = max(boid_vision_radius, species_interaction_radius, collision_radius)
 	cells_per_row = int(ceil(world_size / cell_size))
-	var num_cells := cells_per_row * cells_per_row
+	#cells_per_row = 16# hardcode
+	#print(cells_per_row)
+	num_cells = cells_per_row * cells_per_row
+	#print(num_cells)
 	# Cell counts buffer (per cell)
 	var cell_counts_b := PackedByteArray()
 	cell_counts_b.resize(num_cells * 4)
@@ -211,18 +215,13 @@ func rebuild_buffers(data: Dictionary):
 	uniform_set = rd.uniform_set_create(uniforms, shader, 0)
 
 func compute_stage(run_mode:int):
-	var global_size_x : int
+	var global_size_x : int = int(ceil(float(agent_count) / shader_local_size)) + 1 # per-agent pass
 	var global_size_y : int = 1
-
-	# Dispatch sizes depends on run_mode
-	if run_mode == 2:  # CLEAR per pixel
-		global_size_x = image_size
-		global_size_y = image_size
-	elif run_mode in [10, 12, 13]:  # per-cell passes (prefix sum, cursor)
-		var num_cells := cells_per_row * cells_per_row
-		global_size_x = int(ceil(float(num_cells) / shader_local_size)) + 1
-	else:  # per-agent passes
-		global_size_x = int(ceil(float(agent_count) / shader_local_size)) + 1
+	
+	#global_size_x = image_size # per pixel pass
+	#global_size_y = image_size # per pixel pass
+	
+	#global_size_x = int(ceil(float(num_cells) / shader_local_size)) + 1 # per-cell pass
 	
 	var compute_list := rd.compute_list_begin()
 	rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
@@ -275,21 +274,54 @@ func compute_stage(run_mode:int):
 	rd.sync()
 
 func _process(_delta):
-	# ---------- GPU SPATIAL HASHING PASSES ----------
-	compute_stage(10)  # zero cell counts
-	compute_stage(11)  # count cells (agent -> cell)
-	compute_stage(12)  # prefix sum -> offsets
-	compute_stage(13)  # copy offsets -> cursor
-	compute_stage(14)  # scatter sorted indices
-
-	# ---------- GPU SIMULATION PASSES ----------
-	compute_stage(0)  # run simulation + gather collisions
-	compute_stage(1)  # collision resolution
+	# ---------- SPATIAL HASHING PASSES ----------
 	
-	## ---------- RENDER PASSES ----------
-	#compute_stage(2)  # clear - FASTER ON CPU
-	rd.texture_update(output_tex, 0, empty_img.get_data()) # clear - FASTER ON CPU
-	compute_stage(3)  # draw
+	# zero cell counts
+	var empty_counts_bytes :PackedByteArray
+	empty_counts_bytes.resize(num_cells * 4)
+	rd.buffer_update(buffers[8], 0, empty_counts_bytes.size(), empty_counts_bytes)
+
+	# zero collide counts
+	var empty_collide_counts_bytes :PackedByteArray
+	empty_collide_counts_bytes.resize(agent_count * 4)
+	rd.buffer_update(buffers[6], 0, empty_collide_counts_bytes.size(), empty_collide_counts_bytes)
+	
+	# count cells (agents per cell)
+	compute_stage(10)  
+
+	# compute prefix sum
+	var cell_counts_bytes = rd.buffer_get_data(buffers[8])
+	var counts : PackedInt32Array = cell_counts_bytes.to_int32_array()
+	var offsets = PackedInt32Array()
+	offsets.resize(num_cells)
+	var running := 0
+	for i in range(num_cells):
+		offsets[i] = running
+		running += counts[i]
+
+	# upload offsets AND cursor
+	var offsets_bytes : PackedByteArray = offsets.to_byte_array()
+	rd.buffer_update(buffers[9], 0, offsets_bytes.size(), offsets_bytes) # cell_offsets
+	rd.buffer_update(buffers[12], 0, offsets_bytes.size(), offsets_bytes) # cursor
+	
+	# scatter sorted indices
+	compute_stage(11)  
+	
+	# ---------- SIMULATION PASSES ----------
+	
+	# run simulation + gather collisions
+	compute_stage(0) 
+	
+	# collision resolution
+	compute_stage(1)  
+	
+	# ---------- RENDER PASSES ----------
+	
+	# clear
+	rd.texture_update(output_tex, 0, empty_img.get_data())
+	
+	# draw
+	compute_stage(2)  
 	
 	# --- Copy results back into input buffers ---
 	var output_bytes_pos = rd.buffer_get_data(buffers[3])  # out_pos_buffer
@@ -301,7 +333,7 @@ func _process(_delta):
 	var byte_data := rd.texture_get_data(output_tex, 0)
 	var image := Image.create_from_data(image_size, image_size, false, Image.FORMAT_RGBAF, byte_data)
 	texture.update(image)
-	
+
 # HANDLE MOUSE INPUTS
 var dragging := false
 var last_mouse_pos := Vector2()
