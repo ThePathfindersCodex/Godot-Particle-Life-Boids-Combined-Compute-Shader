@@ -50,7 +50,7 @@ var max_speed : float = 500.0
 var max_force : float = 1000.0
 
 # COLLISION FORCE
-const MAX_COLLISIONS := 16 # 32 # 128  # tune as needed
+const MAX_COLLISIONS := 64 # 32 # 64 # 128  # tune as needed
 var collision_modifier : float = 2.0
 var collision_radius : float =  draw_radius + collision_modifier:
 	get():
