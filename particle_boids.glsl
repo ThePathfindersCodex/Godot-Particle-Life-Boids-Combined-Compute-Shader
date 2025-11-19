@@ -308,18 +308,18 @@ void resolve_collide() {
 
     float world_size_f = params.image_size * params.world_size_mult;
     float col_radius = params.collision_radius;
-    float per_neighbor_max = col_radius * 2.0; //0.5;
-    float max_move = col_radius * 1.0; //0.9;
+    float per_neighbor_max = col_radius * 2.0; // 0.5;
+    float max_move = col_radius * 1.0; // 0.9;
     float apply_frac = 1.0; // 0.5;
-	// float damping = 1.0;
-    // float max_vel_change = length(vec2(col_radius, col_radius));
+	//float damping = 0.98;
+    //float max_vel_change = length(vec2(col_radius, col_radius));
 
     for (uint s = 0u; s < c; ++s) {
         uint j = collision_partner_buffer.partners[id * max_collisions + s];
         if (j >= uint(params.agents_count) || j == id) continue;
 
         vec2 other_pos = out_pos_buffer.data[j].v;
-        // vec2 other_vel = out_vel_buffer.data[j].v;
+        //vec2 other_vel = out_vel_buffer.data[j].v;
 
         vec2 diff = toroidal_diff(pos, other_pos, vec2(world_size_f));
         diff = -diff;
@@ -342,13 +342,12 @@ void resolve_collide() {
             correction += n * single_contrib;
             contrib_count++;
 
-            // float rel_vn = dot(vel - other_vel, n);
-            // if (rel_vn < 0.0) {
-                
-                // float dv = -rel_vn * damping;
-                // dv = min(dv, max_vel_change);
-                // vel -= n * dv;
-            // }
+            //float rel_vn = dot(vel - other_vel, n);
+            //if (rel_vn < 0.0) {
+            //    float dv = -rel_vn * damping;
+            //    dv = min(dv, max_vel_change);
+            //    vel -= n * dv;
+            //}
         }
     }
 
@@ -359,7 +358,7 @@ void resolve_collide() {
     }
 
     out_pos_buffer.data[id].v = pos;
-    // out_vel_buffer.data[id].v = vel;
+    //out_vel_buffer.data[id].v = vel;
 }
 
 vec3 heatmap_color(float t) {
