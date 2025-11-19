@@ -464,7 +464,7 @@ horizontal_alignment = 2
 [node name="SliderVisionRadius" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
-min_value = 5.0
+min_value = 10.0
 max_value = 500.0
 step = 5.0
 value = 100.0
@@ -556,7 +556,7 @@ unique_name_in_owner = true
 layout_mode = 2
 min_value = 10.0
 max_value = 500.0
-step = 10.0
+step = 5.0
 value = 70.0
 
 [node name="LabelForceSoftenMultiplier" type="Label" parent="SimParameters"]

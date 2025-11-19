@@ -161,9 +161,9 @@ func rebuild_buffers(data: Dictionary):
 	# === SPATIAL HASIHNG BUFFERS ===
 	# Compute Number of Cells
 	var world_size := float(image_size) * float(world_size_mult) # same as GLSL's world
-	cell_size = max(boid_vision_radius, species_interaction_radius, collision_radius)
+	cell_size = 500 #max(boid_vision_radius, species_interaction_radius, collision_radius)
 	cells_per_row = int(ceil(world_size / cell_size))
-	#cells_per_row = 16# hardcode
+	#cells_per_row = 46# hardcode
 	#print(cells_per_row)
 	num_cells = cells_per_row * cells_per_row
 	#print(num_cells)
