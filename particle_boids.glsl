@@ -431,6 +431,45 @@ void draw_texture() {
     draw_circle(screen_pos, draw_size, vec4(color, 1.0));
 }
 
+void draw_grid() {
+    uint id = gl_GlobalInvocationID.x;
+    uint img_size = uint(params.image_size);
+    uint total_pixels = img_size * img_size;
+    if (id >= total_pixels) return;
+
+    uint px = id % img_size;
+    uint py = id / img_size;
+
+    vec2 pixel = vec2(px, py);
+
+    // Pixel to world
+    vec2 centered = pixel - vec2(params.image_size * 0.5);
+    centered /= params.zoom;
+    vec2 world = centered + vec2(params.camera_center_x, params.camera_center_y);
+
+    // World bounds
+    float half_world = params.image_size * params.world_size_mult * 0.5;
+    if (world.x < -half_world || world.x > half_world ||
+        world.y < -half_world || world.y > half_world) {
+        return;
+    }
+
+    // Grid spacing in world space
+    float cs = params.cell_size;
+    float fx = mod(world.x + half_world, cs);
+    float fy = mod(world.y + half_world, cs);
+
+    // Line thickness
+    float line_thickness = max(1.0 / params.zoom, 1.0);
+
+    // Draw
+    bool vertical   = (fx < line_thickness) || (fx > cs - line_thickness);
+    bool horizontal = (fy < line_thickness) || (fy > cs - line_thickness);
+    if (vertical || horizontal) {
+        imageStore(OUTPUT_TEXTURE, ivec2(px, py), vec4(vec3(0.9),1.0));
+    }
+}
+
 void count_cells() {
     uint id = gl_GlobalInvocationID.x; // compute directly
     if (id >= uint(params.agents_count)) return;
@@ -466,7 +505,9 @@ void main() {
         resolve_collide();
     } else if (params.run_mode == 2) {
         draw_texture();
-		
+	} else if (params.run_mode == 3) {
+		draw_grid();
+
 	// ---- GPU preprocessing modes ----
     } else if (params.run_mode == 10) {  // COUNT CELLS
         count_cells();

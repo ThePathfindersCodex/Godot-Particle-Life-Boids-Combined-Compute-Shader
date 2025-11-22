@@ -673,6 +673,15 @@ text = "1: 1 2 3 4 5
 5: 1 2 3 4 5"
 horizontal_alignment = 2
 
+[node name="CheckShowGrid" type="CheckBox" parent="."]
+unique_name_in_owner = true
+offset_left = 699.0
+offset_top = 887.0
+offset_right = 814.0
+offset_bottom = 918.0
+focus_mode = 0
+text = "Show Grid?"
+
 [connection signal="value_changed" from="SliderSimMix" to="." method="_on_slider_sim_mix_value_changed"]
 [connection signal="pressed" from="SimControls/HBoxContainer/ButtonPauseResume" to="." method="_on_button_pause_resume_pressed"]
 [connection signal="pressed" from="SimControls/HBoxContainer/ButtonRestart" to="." method="_on_button_restart_pressed"]

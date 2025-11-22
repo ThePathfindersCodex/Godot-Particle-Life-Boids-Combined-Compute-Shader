@@ -58,7 +58,7 @@ func pos_random(owner_node, _i:int, _s:int) -> Vector2:
 
 func pos_ring(owner_node, i:int, _s:int) -> Vector2:
 	var center = Vector2.ZERO
-	var radius = min(owner_node.image_size, owner_node.image_size) * owner_node.rand_start_radius_mul * 0.5
+	var radius = min(owner_node.image_size, owner_node.image_size) * owner_node.rand_start_radius_mul * 0.25
 	var angle = (TAU / owner_node.agent_count) * i
 	return center + Vector2(cos(angle), sin(angle)) * radius
 

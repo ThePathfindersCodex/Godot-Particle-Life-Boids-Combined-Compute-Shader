@@ -218,8 +218,11 @@ func compute_stage(run_mode:int):
 	var global_size_x : int = int(ceil(float(agent_count) / shader_local_size)) + 1 # per-agent pass
 	var global_size_y : int = 1
 	
-	#global_size_x = image_size # per pixel pass
-	#global_size_y = image_size # per pixel pass
+	if (run_mode == 3): # draw grid by pixel
+		global_size_x = image_size*image_size # per pixel 1D pass
+	
+	#global_size_x = image_size # per pixel 2D pass
+	#global_size_y = image_size # per pixel 2D pass
 	
 	#global_size_x = int(ceil(float(num_cells) / shader_local_size)) + 1 # per-cell pass
 	
@@ -322,6 +325,10 @@ func _process(_delta):
 	
 	# draw
 	compute_stage(2)  
+	
+	# (optional) draw partitioning grid
+	if(%CheckShowGrid.button_pressed):
+		compute_stage(3)  
 	
 	# --- Copy results back into input buffers ---
 	var output_bytes_pos = rd.buffer_get_data(buffers[3])  # out_pos_buffer
