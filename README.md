@@ -1,4 +1,4 @@
-**Combined Compute Shader - Particle Life + Boids **
+**Combined Compute Shader - Particle Life + Boids**
 
 Godot Engine v4.5.1.stable
 
