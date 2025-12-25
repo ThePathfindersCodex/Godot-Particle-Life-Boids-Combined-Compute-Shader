@@ -71,7 +71,8 @@ var num_cells : int = 0
 var interaction_matrix : PackedFloat32Array = []
 
 # RENDERER SETUP
-var rd := RenderingServer.create_local_rendering_device()
+var rdmain := RenderingServer.get_rendering_device()
+var textureRD: Texture2DRD
 var shader : RID
 var pipeline : RID
 var uniform_set : RID
@@ -91,9 +92,12 @@ func _ready():
 	fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT \
 					| RenderingDevice.TEXTURE_USAGE_STORAGE_BIT \
 					| RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT \
-					| RenderingDevice.TEXTURE_USAGE_CPU_READ_BIT
+					| RenderingDevice.TEXTURE_USAGE_CPU_READ_BIT \
+					| RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
 	view = RDTextureView.new()
-	restart_simulation()
+	textureRD = Texture2DRD.new()
+	
+	RenderingServer.call_on_render_thread(restart_simulation)
 
 func restart_simulation():
 	# Use startup settings
@@ -137,26 +141,26 @@ func rebuild_buffers(data: Dictionary):
 	var interaction_bytes :PackedByteArray= data["interaction_matrix"].to_byte_array()
 
 	# IN BUFFERS
-	buffers.append(rd.storage_buffer_create(pos_bytes.size(), pos_bytes))      # 0
-	buffers.append(rd.storage_buffer_create(vel_bytes.size(), vel_bytes))      # 1
-	buffers.append(rd.storage_buffer_create(species_bytes.size(), species_bytes))  # 2
+	buffers.append(rdmain.storage_buffer_create(pos_bytes.size(), pos_bytes))      # 0
+	buffers.append(rdmain.storage_buffer_create(vel_bytes.size(), vel_bytes))      # 1
+	buffers.append(rdmain.storage_buffer_create(species_bytes.size(), species_bytes))  # 2
 
 	# OUT BUFFERS (copy of input to start)
 	for b in [pos_bytes, vel_bytes]:
-		buffers.append(rd.storage_buffer_create(b.size(), b))  # 3, 4
+		buffers.append(rdmain.storage_buffer_create(b.size(), b))  # 3, 4
 
 	# Interaction Matrix
-	buffers.append(rd.storage_buffer_create(interaction_bytes.size(), interaction_bytes))  # 5
+	buffers.append(rdmain.storage_buffer_create(interaction_bytes.size(), interaction_bytes))  # 5
 
 	# === COLLISION BUFFERS ===
 	# One per agent (collision counts)
 	var count_bytes := PackedByteArray()
 	count_bytes.resize(int(agent_count) * 4) # 4 bytes per uint (zero-filled)
-	buffers.append(rd.storage_buffer_create(count_bytes.size(), count_bytes))  # 6 CollisionCountBuffer
+	buffers.append(rdmain.storage_buffer_create(count_bytes.size(), count_bytes))  # 6 CollisionCountBuffer
 	# agent_count * MAX_COLLISIONS (partner indices)
 	var partners_bytes := PackedByteArray()
 	partners_bytes.resize(int(agent_count) * int(MAX_COLLISIONS) * 4)
-	buffers.append(rd.storage_buffer_create(partners_bytes.size(), partners_bytes))  # 7 CollisionPartnerBuffer
+	buffers.append(rdmain.storage_buffer_create(partners_bytes.size(), partners_bytes))  # 7 CollisionPartnerBuffer
 
 	# === SPATIAL HASIHNG BUFFERS ===
 	# Compute Number of Cells
@@ -170,28 +174,29 @@ func rebuild_buffers(data: Dictionary):
 	# Cell counts buffer (per cell)
 	var cell_counts_b := PackedByteArray()
 	cell_counts_b.resize(num_cells * 4)
-	buffers.append(rd.storage_buffer_create(cell_counts_b.size(), cell_counts_b))  # binding 8
+	buffers.append(rdmain.storage_buffer_create(cell_counts_b.size(), cell_counts_b))  # binding 8
 	# Cell offsets buffer (per cell)
 	var cell_offsets_b := PackedByteArray()
 	cell_offsets_b.resize(num_cells * 4)
-	buffers.append(rd.storage_buffer_create(cell_offsets_b.size(), cell_offsets_b))  # binding 9
+	buffers.append(rdmain.storage_buffer_create(cell_offsets_b.size(), cell_offsets_b))  # binding 9
 	# Sorted indices (per agent)
 	var sorted_indices_b := PackedByteArray()
 	sorted_indices_b.resize(int(agent_count) * 4)
-	buffers.append(rd.storage_buffer_create(sorted_indices_b.size(), sorted_indices_b))  # binding 10
+	buffers.append(rdmain.storage_buffer_create(sorted_indices_b.size(), sorted_indices_b))  # binding 10
 	# Agent -> cell mapping (per agent)
 	var agent_cell_b := PackedByteArray()
 	agent_cell_b.resize(int(agent_count) * 4)
-	buffers.append(rd.storage_buffer_create(agent_cell_b.size(), agent_cell_b))  # binding 11
+	buffers.append(rdmain.storage_buffer_create(agent_cell_b.size(), agent_cell_b))  # binding 11
 	# Cursor per cell (per cell)
 	var cursor_b := PackedByteArray()
 	cursor_b.resize(num_cells * 4)
-	buffers.append(rd.storage_buffer_create(cursor_b.size(), cursor_b))  # binding 12
+	buffers.append(rdmain.storage_buffer_create(cursor_b.size(), cursor_b))  # binding 12
 
 	# Output texture
 	var output_img := Image.create(image_size, image_size, false, Image.FORMAT_RGBAF)
-	texture = ImageTexture.create_from_image(output_img)
-	output_tex = rd.texture_create(fmt, view, [output_img.get_data()])
+	#texture = ImageTexture.create_from_image(output_img)
+	output_tex = rdmain.texture_create(fmt, view, [output_img.get_data()])
+	textureRD.texture_rd_rid = output_tex
 
 	# UNIFORMS
 	for i in range(13):
@@ -210,9 +215,9 @@ func rebuild_buffers(data: Dictionary):
 
 	# SHADER + PIPELINE
 	var shader_file := load("res://particle_boids.glsl") as RDShaderFile
-	shader = rd.shader_create_from_spirv(shader_file.get_spirv())
-	pipeline = rd.compute_pipeline_create(shader)
-	uniform_set = rd.uniform_set_create(uniforms, shader, 0)
+	shader = rdmain.shader_create_from_spirv(shader_file.get_spirv())
+	pipeline = rdmain.compute_pipeline_create(shader)
+	uniform_set = rdmain.uniform_set_create(uniforms, shader, 0)
 
 func compute_stage(run_mode:int):
 	var global_size_x : int = int(ceil(float(agent_count) / shader_local_size)) + 1 # per-agent pass
@@ -226,9 +231,9 @@ func compute_stage(run_mode:int):
 	
 	#global_size_x = int(ceil(float(num_cells) / shader_local_size)) + 1 # per-cell pass
 	
-	var compute_list := rd.compute_list_begin()
-	rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
-	rd.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
+	var compute_list := rdmain.compute_list_begin()
+	rdmain.compute_list_bind_compute_pipeline(compute_list, pipeline)
+	rdmain.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
 
 	# PUSH CONSTANT PARAMETERS
 	var params := PackedFloat32Array([
@@ -270,30 +275,33 @@ func compute_stage(run_mode:int):
 	var params_bytes := PackedByteArray()
 	params_bytes.append_array(params.to_byte_array())
 
-	rd.compute_list_set_push_constant(compute_list, params_bytes, params_bytes.size())
-	rd.compute_list_dispatch(compute_list, global_size_x, global_size_y, 1) 
-	rd.compute_list_end()
-	rd.submit()
-	rd.sync()
+	rdmain.compute_list_set_push_constant(compute_list, params_bytes, params_bytes.size())
+	rdmain.compute_list_dispatch(compute_list, global_size_x, global_size_y, 1) 
+	rdmain.compute_list_end()
+	#rdmain.submit()
+	#rdmain.sync()
 
 func _process(_delta):
+	RenderingServer.call_on_render_thread(run_simulation)
+
+func run_simulation():
 	# ---------- SPATIAL HASHING PASSES ----------
 	
 	# zero cell counts
 	var empty_counts_bytes :PackedByteArray
 	empty_counts_bytes.resize(num_cells * 4)
-	rd.buffer_update(buffers[8], 0, empty_counts_bytes.size(), empty_counts_bytes)
+	rdmain.buffer_update(buffers[8], 0, empty_counts_bytes.size(), empty_counts_bytes)
 
 	# zero collide counts
 	var empty_collide_counts_bytes :PackedByteArray
 	empty_collide_counts_bytes.resize(agent_count * 4)
-	rd.buffer_update(buffers[6], 0, empty_collide_counts_bytes.size(), empty_collide_counts_bytes)
+	rdmain.buffer_update(buffers[6], 0, empty_collide_counts_bytes.size(), empty_collide_counts_bytes)
 	
 	# count cells (agents per cell)
 	compute_stage(10)  
 
 	# compute prefix sum
-	var cell_counts_bytes = rd.buffer_get_data(buffers[8])
+	var cell_counts_bytes = rdmain.buffer_get_data(buffers[8])
 	var counts : PackedInt32Array = cell_counts_bytes.to_int32_array()
 	var offsets = PackedInt32Array()
 	offsets.resize(num_cells)
@@ -304,8 +312,8 @@ func _process(_delta):
 
 	# upload offsets AND cursor
 	var offsets_bytes : PackedByteArray = offsets.to_byte_array()
-	rd.buffer_update(buffers[9], 0, offsets_bytes.size(), offsets_bytes) # cell_offsets
-	rd.buffer_update(buffers[12], 0, offsets_bytes.size(), offsets_bytes) # cursor
+	rdmain.buffer_update(buffers[9], 0, offsets_bytes.size(), offsets_bytes) # cell_offsets
+	rdmain.buffer_update(buffers[12], 0, offsets_bytes.size(), offsets_bytes) # cursor
 	
 	# scatter sorted indices
 	compute_stage(11)  
@@ -321,7 +329,7 @@ func _process(_delta):
 	# ---------- RENDER PASSES ----------
 	
 	# clear
-	rd.texture_update(output_tex, 0, empty_img.get_data())
+	rdmain.texture_update(output_tex, 0, empty_img.get_data())
 	
 	# draw
 	compute_stage(2)  
@@ -331,15 +339,13 @@ func _process(_delta):
 		compute_stage(3)  
 	
 	# --- Copy results back into input buffers ---
-	var output_bytes_pos = rd.buffer_get_data(buffers[3])  # out_pos_buffer
-	var output_bytes_vel = rd.buffer_get_data(buffers[4])  # out_vel_buffer
-	rd.buffer_update(buffers[0], 0, output_bytes_pos.size(), output_bytes_pos)
-	rd.buffer_update(buffers[1], 0, output_bytes_vel.size(), output_bytes_vel)
+	var output_bytes_pos = rdmain.buffer_get_data(buffers[3])  # out_pos_buffer
+	var output_bytes_vel = rdmain.buffer_get_data(buffers[4])  # out_vel_buffer
+	rdmain.buffer_update(buffers[0], 0, output_bytes_pos.size(), output_bytes_pos)
+	rdmain.buffer_update(buffers[1], 0, output_bytes_vel.size(), output_bytes_vel)
 	
 	# --- Update texture ---
-	var byte_data := rd.texture_get_data(output_tex, 0)
-	var image := Image.create_from_data(image_size, image_size, false, Image.FORMAT_RGBAF, byte_data)
-	texture.update(image)
+	texture = textureRD
 
 # HANDLE MOUSE INPUTS
 var dragging := false
