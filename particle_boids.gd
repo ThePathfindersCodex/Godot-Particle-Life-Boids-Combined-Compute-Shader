@@ -99,6 +99,19 @@ func _ready():
 	
 	RenderingServer.call_on_render_thread(restart_simulation)
 
+func _exit_tree():
+	if textureRD:
+		textureRD.texture_rd_rid = RID()
+	RenderingServer.call_on_render_thread(_free_compute_resources)
+
+func _free_compute_resources():
+	for i in range(buffers.size()):
+		if buffers[i]:
+			rdmain.free_rid(buffers[i])
+	if shader:
+		rdmain.free_rid(shader)
+	# TODO: consider other RIDs
+
 func restart_simulation():
 	# Use startup settings
 	agent_count = start_agent_count
@@ -389,6 +402,7 @@ func swap_buffer_bindings():
 	uniforms[4].add_id(buffers[vel_out_index])
 	
 	# rebuild uniform set
+	rdmain.free_rid(uniform_set)
 	uniform_set = rdmain.uniform_set_create(uniforms, shader, 0)
 
 # HANDLE MOUSE INPUTS
