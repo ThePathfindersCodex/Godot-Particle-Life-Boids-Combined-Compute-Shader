@@ -1,22 +1,19 @@
 extends TextureRect
 
 # CONFIG
-var shader_local_size := 512
-var empty_img : Image
-@onready var image_size : int = %ParticleBoids.size.x:
-	set(v):
-		empty_img = Image.create(v, v, false, Image.FORMAT_RGBAF)
-		empty_img.fill(Color(0.1, 0.1, 0.1, 1.0))
-		image_size = v
-var world_size_mult : int = 20
-var agent_count : int = 1024*25
-var species_count : int = 10
-var draw_radius : float = 2.0
+var compute_texture_size :int= 256 # Holds up to 256*256 pixel particles
+var viewport_size :int= 800
+var shader_local_size_x := 16
+var shader_local_size_y := 16
+@onready var image_size = compute_texture_size
+var zone_size_mult : int = 20 # wrap around border world size
+var agent_count : int = 1024*15
+var species_count : int = 8
 
 # STARTUP PARAMS
 var starting_method : int = 4 # method to use when restarting new field?
 var rand_start_interaction_range : float = 2.0 # force will be random between -X and +X
-var rand_start_radius_mul : float = 16.0 # different startup patterns use this multiplier
+var rand_start_radius_mul : float = 2.0 # different startup patterns use this multiplier
 var start_agent_count : int = agent_count # only used when restarting new field
 var start_species_count : int = species_count # only used when restarting new field
 
@@ -28,8 +25,8 @@ var paused_dt : float = dt # only used for pause/resume feature
 var mix_t: float = 0.5 # [0.0 == full boids; == 1.0 full particle life]
 
 # VISION KERNELS
-var boid_vision_radius : float = 350.0
-var species_interaction_radius : float = 250.0
+var boid_vision_radius : float = 200.0 # 350.0
+var species_interaction_radius : float = 150.0 # 250.0
 
 # BOIDS PARAMETERS
 var alignment_force : float = 1.0
@@ -39,7 +36,7 @@ var separation_force : float = 1.0
 # FORCE ADJUSTMENTS
 var movement_randomness : float = 0.01
 var movement_scaling : float = 1.0
-var force_softening_mul : float = 3.0
+var force_softening_mul : float = 1.0 # 0.1 # 3.0
 var force_softening : float = species_interaction_radius * force_softening_mul:
 	get():
 		return species_interaction_radius * force_softening_mul
@@ -51,19 +48,16 @@ var max_force : float = 1000.0
 
 # COLLISION FORCE
 const MAX_COLLISIONS := 64 # 32 # 64 # 128  # tune as needed
-var collision_modifier : float = 2.0
-var collision_radius : float =  draw_radius + collision_modifier:
-	get():
-		return draw_radius + collision_modifier
+var collision_radius : float = 4.0
 
 # CAMERA
 var camera_center : Vector2 = Vector2.ZERO
-var zoom : float = 0.1
-const MIN_ZOOM := 0.05
-const MAX_ZOOM := 2.0
+var zoom : float = 0.82 # 0.5
+const MIN_ZOOM := 0.1
+const MAX_ZOOM := 5.0
 
 # SPATIAL HASHING
-var cell_size : int = 0
+var cell_size : int = 500
 var cells_per_row : int = 0
 var num_cells : int = 0
 
@@ -75,19 +69,21 @@ var rdmain := RenderingServer.get_rendering_device()
 var textureRD: Texture2DRD
 var shader : RID
 var pipeline : RID
-var uniform_set : RID
-var output_tex : RID
+
 var fmt := RDTextureFormat.new()
 var view := RDTextureView.new()
 var buffers : Array[RID] = []
-var uniforms : Array[RDUniform] = []
-var output_tex_uniform : RDUniform
+
+var input_particles : RID
+var output_particles : RID
+var multimesh := MultiMesh.new()
+var quadmesh := QuadMesh.new()
+var render_material := ShaderMaterial.new()
 
 func _ready():
 	randomize()
-	image_size = %ParticleBoids.size.x
-	fmt.width = image_size
-	fmt.height = image_size
+	fmt.width = compute_texture_size
+	fmt.height = compute_texture_size
 	fmt.format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 	fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT \
 					| RenderingDevice.TEXTURE_USAGE_STORAGE_BIT \
@@ -100,14 +96,20 @@ func _ready():
 	RenderingServer.call_on_render_thread(restart_simulation)
 
 func _exit_tree():
-	if textureRD:
-		textureRD.texture_rd_rid = RID()
+	#if textureRD:
+		#textureRD.texture_rd_rid = RID()
 	RenderingServer.call_on_render_thread(_free_compute_resources)
 
 func _free_compute_resources():
+	if textureRD:
+		textureRD.texture_rd_rid = RID()
 	for i in range(buffers.size()):
 		if buffers[i]:
 			rdmain.free_rid(buffers[i])
+	if input_particles:
+		rdmain.free_rid(input_particles)
+	if output_particles:
+		rdmain.free_rid(output_particles)
 	if shader:
 		rdmain.free_rid(shader)
 	# TODO: consider other RIDs
@@ -145,115 +147,141 @@ func restart_simulation():
 	%CheckBoxLockMatrix.disabled = false 
 
 func rebuild_buffers(data: Dictionary):
+	_free_compute_resources()
 	buffers.clear()
-	uniforms.clear()
 
-	var pos_bytes :PackedByteArray= data["pos"].to_byte_array()
-	var vel_bytes :PackedByteArray= data["vel"].to_byte_array()
-	var species_bytes :PackedByteArray= data["species"].to_byte_array()
-	var interaction_bytes :PackedByteArray= data["interaction_matrix"].to_byte_array()
+	var img_particles := Image.create(
+		compute_texture_size,
+		compute_texture_size,
+		false,
+		Image.FORMAT_RGBAF
+	)
 
-	# IN BUFFERS
-	buffers.append(rdmain.storage_buffer_create(pos_bytes.size(), pos_bytes))      # 0
-	buffers.append(rdmain.storage_buffer_create(vel_bytes.size(), vel_bytes))      # 1
-	buffers.append(rdmain.storage_buffer_create(species_bytes.size(), species_bytes))  # 2
-
-	# OUT BUFFERS (copy of input to start)
-	for b in [pos_bytes, vel_bytes]:
-		buffers.append(rdmain.storage_buffer_create(b.size(), b))  # 3, 4
+	for i in agent_count:
+		var x :int= i % compute_texture_size
+		@warning_ignore("integer_division")
+		var y :int= i / compute_texture_size
+		img_particles.set_pixel(
+			x, y,
+			Color(data["pos"][i].x, data["pos"][i].y, data["vel"][i].x, data["vel"][i].y)
+		)
+	var data_particles := img_particles.get_data()
+	input_particles = rdmain.texture_create(fmt, view, [data_particles])
+	output_particles = rdmain.texture_create(fmt, view, [data_particles])
 
 	# Interaction Matrix
-	buffers.append(rdmain.storage_buffer_create(interaction_bytes.size(), interaction_bytes))  # 5
+	var species_bytes :PackedByteArray= data["species"].to_byte_array()
+	var interaction_bytes :PackedByteArray= data["interaction_matrix"].to_byte_array()
+	buffers.append(rdmain.storage_buffer_create(species_bytes.size(), species_bytes))
+	buffers.append(rdmain.storage_buffer_create(interaction_bytes.size(), interaction_bytes))
 
 	# === COLLISION BUFFERS ===
 	# One per agent (collision counts)
 	var count_bytes := PackedByteArray()
 	count_bytes.resize(int(agent_count) * 4) # 4 bytes per uint (zero-filled)
-	buffers.append(rdmain.storage_buffer_create(count_bytes.size(), count_bytes))  # 6 CollisionCountBuffer
+	buffers.append(rdmain.storage_buffer_create(count_bytes.size(), count_bytes))  # CollisionCountBuffer
 	# agent_count * MAX_COLLISIONS (partner indices)
 	var partners_bytes := PackedByteArray()
 	partners_bytes.resize(int(agent_count) * int(MAX_COLLISIONS) * 4)
-	buffers.append(rdmain.storage_buffer_create(partners_bytes.size(), partners_bytes))  # 7 CollisionPartnerBuffer
+	buffers.append(rdmain.storage_buffer_create(partners_bytes.size(), partners_bytes))  # CollisionPartnerBuffer
 
 	# === SPATIAL HASIHNG BUFFERS ===
 	# Compute Number of Cells
-	var world_size := float(image_size) * float(world_size_mult) # same as GLSL's world
-	cell_size = 500 #max(boid_vision_radius, species_interaction_radius, collision_radius)
+	var world_size := float(image_size) * float(zone_size_mult) # same as GLSL's world
 	cells_per_row = int(ceil(world_size / cell_size))
-	#cells_per_row = 46# hardcode
 	#print(cells_per_row)
 	num_cells = cells_per_row * cells_per_row
 	#print(num_cells)
 	# Cell counts buffer (per cell)
 	var cell_counts_b := PackedByteArray()
 	cell_counts_b.resize(num_cells * 4)
-	buffers.append(rdmain.storage_buffer_create(cell_counts_b.size(), cell_counts_b))  # binding 8
+	buffers.append(rdmain.storage_buffer_create(cell_counts_b.size(), cell_counts_b))
 	# Cell offsets buffer (per cell)
 	var cell_offsets_b := PackedByteArray()
 	cell_offsets_b.resize(num_cells * 4)
-	buffers.append(rdmain.storage_buffer_create(cell_offsets_b.size(), cell_offsets_b))  # binding 9
+	buffers.append(rdmain.storage_buffer_create(cell_offsets_b.size(), cell_offsets_b))
 	# Sorted indices (per agent)
 	var sorted_indices_b := PackedByteArray()
 	sorted_indices_b.resize(int(agent_count) * 4)
-	buffers.append(rdmain.storage_buffer_create(sorted_indices_b.size(), sorted_indices_b))  # binding 10
+	buffers.append(rdmain.storage_buffer_create(sorted_indices_b.size(), sorted_indices_b))
 	# Agent -> cell mapping (per agent)
 	var agent_cell_b := PackedByteArray()
 	agent_cell_b.resize(int(agent_count) * 4)
-	buffers.append(rdmain.storage_buffer_create(agent_cell_b.size(), agent_cell_b))  # binding 11
+	buffers.append(rdmain.storage_buffer_create(agent_cell_b.size(), agent_cell_b))
 	# Cursor per cell (per cell)
 	var cursor_b := PackedByteArray()
 	cursor_b.resize(num_cells * 4)
-	buffers.append(rdmain.storage_buffer_create(cursor_b.size(), cursor_b))  # binding 12
+	buffers.append(rdmain.storage_buffer_create(cursor_b.size(), cursor_b))
 
 	# Output texture
-	var output_img := Image.create(image_size, image_size, false, Image.FORMAT_RGBAF)
-	#texture = ImageTexture.create_from_image(output_img)
-	output_tex = rdmain.texture_create(fmt, view, [output_img.get_data()])
-	textureRD.texture_rd_rid = output_tex
+	textureRD.texture_rd_rid = output_particles
 
-	# UNIFORMS
-	for i in range(13):
-		var u := RDUniform.new()
-		u.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-		u.binding = i
-		u.add_id(buffers[i])
-		uniforms.append(u)
+	# multimesh/instance/mesh/material
+	#var mask :Texture2D= load("res://triangle.png")
+	var mask :GradientTexture2D= load("res://my_circle.tres")
+	render_material.shader = load("res://particle_draw.gdshader")
+	render_material.set_shader_parameter("alpha_tex", mask)
+	render_material.set_shader_parameter("particle_buffer", textureRD)
+	var heatmap_colors :GradientTexture1D= load("res://my_gradient_heatmap.tres")
+	render_material.set_shader_parameter("gradient_texture", heatmap_colors)
+	render_material.set_shader_parameter("species_count", species_count)
+	render_material.set_shader_parameter("camera_center", camera_center)
+	render_material.set_shader_parameter("zoom", zoom)
+	render_material.set_shader_parameter("compute_texture_size", compute_texture_size)
+	render_material.set_shader_parameter("viewport_size", Vector2(viewport_size, viewport_size))
+	%MMI.material = render_material # 2D
 
-	# IMAGE TEXTURE OUTPUT
-	output_tex_uniform = RDUniform.new()
-	output_tex_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	output_tex_uniform.binding = 13
-	output_tex_uniform.add_id(output_tex)
-	uniforms.append(output_tex_uniform)
+	quadmesh.size = Vector2.ONE
+	multimesh.instance_count = 0 # can only set other values when instance_count==0
+	multimesh.mesh = quadmesh
+	multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	multimesh.use_colors = false
+	multimesh.use_custom_data = true
+	multimesh.instance_count = agent_count # actual point count
+	for i in range(agent_count):
+		multimesh.set_instance_transform_2d(i, Transform2D())
+		multimesh.set_instance_custom_data(i, Color(data["species"][i],0,0,0))
+
+	%MMI.multimesh = multimesh
 
 	# SHADER + PIPELINE
 	var shader_file := load("res://particle_boids.glsl") as RDShaderFile
 	shader = rdmain.shader_create_from_spirv(shader_file.get_spirv())
 	pipeline = rdmain.compute_pipeline_create(shader)
-	uniform_set = rdmain.uniform_set_create(uniforms, shader, 0)
 
-func compute_stage(run_mode:int):
-	var global_size_x : int = int(ceil(float(agent_count) / shader_local_size)) + 1 # per-agent pass
-	var global_size_y : int = 1
+func compute_stage(run_mode:int,input_set,output_set):
+	var global_size_x : int
+	var global_size_y : int
 	
-	if (run_mode == 3): # draw grid by pixel
-		global_size_x = image_size*image_size # per pixel 1D pass
+	var group_size = shader_local_size_x * shader_local_size_y # 16*16 = 256
 	
-	#global_size_x = image_size # per pixel 2D pass
-	#global_size_y = image_size # per pixel 2D pass
-	
-	#global_size_x = int(ceil(float(num_cells) / shader_local_size)) + 1 # per-cell pass
-	
+	# --- texture based passes ---
+	if run_mode in [0,1,10]:
+		global_size_x = int(ceil(float(compute_texture_size) / shader_local_size_x))
+		global_size_y = int(ceil(float(compute_texture_size) / shader_local_size_y))
+
+	# --- prefix scan ---
+	elif run_mode == 11:
+		global_size_x = int(ceil(float(num_cells) / float(group_size)))
+		global_size_y = 1
+
+	# --- scatter ---
+	elif run_mode == 12:
+		global_size_x = int(ceil(float(agent_count) / float(group_size)))
+		global_size_y = 1
+
 	var compute_list := rdmain.compute_list_begin()
 	rdmain.compute_list_bind_compute_pipeline(compute_list, pipeline)
-	rdmain.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
+	rdmain.compute_list_bind_uniform_set(compute_list, input_set, 0)
+	rdmain.compute_list_bind_uniform_set(compute_list, output_set, 1)
 
 	# PUSH CONSTANT PARAMETERS
 	var params := PackedFloat32Array([
 		run_mode,
 		dt,
+		compute_texture_size,
 		mix_t,
-		agent_count,
+		float(agent_count),
 		species_count,
 		
 		boid_vision_radius,
@@ -277,13 +305,9 @@ func compute_stage(run_mode:int):
 		cell_size,
 		cells_per_row,
 		
-		draw_radius,
-		image_size,
-		world_size_mult,
-		camera_center.x,
-		camera_center.y,
-		zoom,
-		#0.0,0.0,0.0
+		float(image_size),
+		float(zone_size_mult),
+		0.0,0.0,0.0
 	])
 	var params_bytes := PackedByteArray()
 	params_bytes.append_array(params.to_byte_array())
@@ -298,131 +322,127 @@ func _process(_delta):
 	RenderingServer.call_on_render_thread(run_simulation)
 
 func run_simulation():
+	# Flip buffers via uniformsets
+	var frame_flip = flip_buffers()
+	var input_set  = frame_flip[0]
+	var output_set = frame_flip[1]
+	
 	# ---------- SPATIAL HASHING PASSES ----------
 	
 	# zero cell counts
 	var empty_counts_bytes :PackedByteArray
 	empty_counts_bytes.resize(num_cells * 4)
-	rdmain.buffer_update(buffers[8], 0, empty_counts_bytes.size(), empty_counts_bytes)
+	rdmain.buffer_update(buffers[4], 0, empty_counts_bytes.size(), empty_counts_bytes)
 
 	# zero collide counts
 	var empty_collide_counts_bytes :PackedByteArray
 	empty_collide_counts_bytes.resize(agent_count * 4)
-	rdmain.buffer_update(buffers[6], 0, empty_collide_counts_bytes.size(), empty_collide_counts_bytes)
+	rdmain.buffer_update(buffers[2], 0, empty_collide_counts_bytes.size(), empty_collide_counts_bytes)
 	
 	# count cells (agents per cell)
-	compute_stage(10)  
-
+	compute_stage(10,input_set,output_set)  
 	# compute prefix sum
-	var cell_counts_bytes = rdmain.buffer_get_data(buffers[8])
-	var counts : PackedInt32Array = cell_counts_bytes.to_int32_array()
-	var offsets = PackedInt32Array()
-	offsets.resize(num_cells)
-	var running := 0
-	for i in range(num_cells):
-		offsets[i] = running
-		running += counts[i]
-
-	# upload offsets AND cursor
-	var offsets_bytes : PackedByteArray = offsets.to_byte_array()
-	rdmain.buffer_update(buffers[9], 0, offsets_bytes.size(), offsets_bytes) # cell_offsets
-	rdmain.buffer_update(buffers[12], 0, offsets_bytes.size(), offsets_bytes) # cursor
-	
+	compute_stage(11,input_set,output_set)  
 	# scatter sorted indices
-	compute_stage(11)  
-	
+	compute_stage(12,input_set,output_set)
+
 	# ---------- SIMULATION PASSES ----------
 	
 	# run simulation + gather collisions
-	compute_stage(0) 
+	compute_stage(0,input_set,output_set) 
 	
 	# collision resolution
-	compute_stage(1)  
+	compute_stage(1,input_set,output_set)  
 	
-	# ---------- RENDER PASSES ----------
-	
-	# clear
-	rdmain.texture_update(output_tex, 0, empty_img.get_data())
-	
-	# draw
-	compute_stage(2)  
-	
-	# (optional) draw partitioning grid
-	if(%CheckShowGrid.button_pressed):
-		compute_stage(3)  
-	
-	### RESOLVE RESULTS — swap the output to be the input for next frame
-	swap_buffer_bindings()
-	
-	# --- Update texture ---
-	texture = textureRD
+	# UPDATE MATERIAL BUFFERS
+	render_material.set_shader_parameter("particle_buffer", textureRD)
+	render_material.set_shader_parameter("camera_center", camera_center)
+	render_material.set_shader_parameter("zoom", zoom)
 
-# FRAME BUFFER SWAP LOGIC
-var swap_flag : int = 0
-func swap_buffer_bindings():
-	if (dt == 0):
-		return
-	
-	swap_flag = 1 - swap_flag  # toggle between 0 and 1
+	rdmain.free_rid(input_set)
+	rdmain.free_rid(output_set)
 
-	var pos_in_index = 0
-	var vel_in_index = 0
-	var pos_out_index = 0
-	var vel_out_index = 0
-	if swap_flag == 0:
-		# Use first set as input, second set as output
-		pos_in_index = 0
-		vel_in_index = 1
-		pos_out_index = 3
-		vel_out_index = 4
+var ping : bool = false
+func flip_buffers():
+	# Flip buffers
+	ping = !ping
+	var read_main  : RID
+	var read_sec   : RID
+	var write_main : RID
+	var write_sec  : RID
+	if ping:
+		read_main  = output_particles
+		write_main = input_particles
 	else:
-		# Use second set as input, first set as output
-		pos_in_index = 3
-		vel_in_index = 4
-		pos_out_index = 0
-		vel_out_index = 1
-	
-	# rebuild uniforms for bindings 0 and 1
-	uniforms[0] = RDUniform.new()
-	uniforms[0].uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	uniforms[0].binding = 0
-	uniforms[0].add_id(buffers[pos_in_index])
-	uniforms[1] = RDUniform.new()
-	uniforms[1].uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	uniforms[1].binding = 1
-	uniforms[1].add_id(buffers[vel_in_index])
-	
-	uniforms[3] = RDUniform.new()
-	uniforms[3].uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	uniforms[3].binding = 3
-	uniforms[3].add_id(buffers[pos_out_index])
-	uniforms[4] = RDUniform.new()
-	uniforms[4].uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	uniforms[4].binding = 4
-	uniforms[4].add_id(buffers[vel_out_index])
-	
-	# rebuild uniform set
-	rdmain.free_rid(uniform_set)
-	uniform_set = rdmain.uniform_set_create(uniforms, shader, 0)
+		read_main  = input_particles
+		write_main = output_particles
 
-# HANDLE MOUSE INPUTS
-var dragging := false
-var last_mouse_pos := Vector2()
-func _gui_input(event):
-	if event is InputEventMouseButton:
-		# Handle zoom
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			zoom = clamp(zoom * 1.05, MIN_ZOOM, MAX_ZOOM)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			zoom = clamp(zoom / 1.05, MIN_ZOOM, MAX_ZOOM)
+	# use correct output image
+	if textureRD:
+		textureRD.texture_rd_rid = write_main
+	
+	# Create uniform sets
+	var input_set  := _create_uniform_set(read_main,  read_sec,  0)
+	var output_set := _create_uniform_set(write_main, write_sec, 1)
+	
+	return [input_set,output_set]
 
-		# Start/stop panning with right mouse button
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			dragging = event.pressed
-			last_mouse_pos = event.position
+func _create_uniform_set(texture_rd: RID, texture_rd2: RID, _uniform_set: int) -> RID:
+	var uniform := RDUniform.new()
+	uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	uniform.binding = 0
+	uniform.add_id(texture_rd)
+	
+	var uniform2 := RDUniform.new()
+	uniform2.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	uniform2.binding = 0
+	uniform2.add_id(texture_rd2)
+	
+	var uniform3 := RDUniform.new()
+	uniform3.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform3.binding = 1
+	uniform3.add_id(buffers[0]) #  in_species_buffer
 
-	elif event is InputEventMouseMotion and dragging:
-		# Convert drag delta to world space based on zoom
-		var delta :Vector2= (event.position - last_mouse_pos) / zoom
-		last_mouse_pos = event.position
-		camera_center -= delta
+	var uniform4 := RDUniform.new()
+	uniform4.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform4.binding = 2
+	uniform4.add_id(buffers[1]) # interaction_matrix
+	
+	var uniform5 := RDUniform.new()
+	uniform5.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform5.binding = 3
+	uniform5.add_id(buffers[2]) # 3  collision_count_buffer
+	
+	var uniform6 := RDUniform.new()
+	uniform6.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform6.binding = 4
+	uniform6.add_id(buffers[3]) # 4  collision_partner_buffer
+	
+	var uniform7 := RDUniform.new()
+	uniform7.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform7.binding = 5
+	uniform7.add_id(buffers[4]) # Cell counts buffer
+	
+	var uniform8 := RDUniform.new()
+	uniform8.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform8.binding = 6
+	uniform8.add_id(buffers[5]) # Cell offsets buffer
+	
+	var uniform9 := RDUniform.new()
+	uniform9.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform9.binding = 7
+	uniform9.add_id(buffers[6]) # Sorted indices
+	
+	var uniform10 := RDUniform.new()
+	uniform10.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform10.binding = 8
+	uniform10.add_id(buffers[7]) # Agent -> cell mapping
+	
+	var uniform11 := RDUniform.new()
+	uniform11.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
+	uniform11.binding = 9
+	uniform11.add_id(buffers[8]) # Cursor per cell
+	
+	var new_set = [uniform, uniform2, uniform3, uniform4, uniform5, uniform6, uniform7, uniform8, uniform9, uniform10, uniform11]
+	
+	return rdmain.uniform_set_create(new_set, shader, _uniform_set)

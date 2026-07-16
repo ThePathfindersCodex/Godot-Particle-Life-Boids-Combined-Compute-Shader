@@ -16,12 +16,17 @@ expand_margin_bottom = 5.0
 [node name="Main" type="Node2D"]
 script = ExtResource("1_h2yge")
 
+[node name="MMI" type="MultiMeshInstance2D" parent="."]
+unique_name_in_owner = true
+position = Vector2(42, 94)
+
 [node name="ParticleBoids" type="TextureRect" parent="."]
 unique_name_in_owner = true
-offset_left = 14.0
-offset_top = 78.0
-offset_right = 814.0
-offset_bottom = 878.0
+visible = false
+offset_left = 42.0
+offset_top = 94.0
+offset_right = 842.0
+offset_bottom = 894.0
 texture = SubResource("PlaceholderTexture2D_ig7tw")
 script = ExtResource("1_ig7tw")
 
@@ -39,6 +44,7 @@ offset_left = 1074.0
 offset_top = 32.0
 offset_right = 1304.0
 offset_bottom = 56.0
+mouse_force_pass_scroll_events = false
 max_value = 1.0
 step = 0.1
 value = 0.5
@@ -160,44 +166,36 @@ popup/item_3/id = 3
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
-selected = 8
-item_count = 10
+selected = 2
+item_count = 4
 popup/item_0/text = "0"
 popup/item_0/id = 0
 popup/item_0/disabled = true
-popup/item_1/text = "Start Size: 2"
+popup/item_1/text = "Start Size: 1"
 popup/item_1/id = 1
-popup/item_2/text = "Start Size: 4"
+popup/item_2/text = "Start Size: 2"
 popup/item_2/id = 2
-popup/item_3/text = "Start Size: 6"
+popup/item_3/text = "Start Size: 3"
 popup/item_3/id = 3
-popup/item_4/text = "Start Size: 8"
-popup/item_4/id = 4
-popup/item_5/text = "Start Size: 10"
-popup/item_5/id = 5
-popup/item_6/text = "Start Size: 12"
-popup/item_6/id = 6
-popup/item_7/text = "Start Size: 14"
-popup/item_7/id = 7
-popup/item_8/text = "Start Size: 16"
-popup/item_8/id = 8
-popup/item_9/text = "Start Size: 18"
-popup/item_9/id = 9
 
 [node name="OptionStartPointCount" type="OptionButton" parent="SimControls/HBoxContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_mode = 0
 selected = 2
-item_count = 4
-popup/item_0/text = "5120"
-popup/item_0/id = 2
-popup/item_1/text = "15360"
-popup/item_1/id = 3
-popup/item_2/text = "25600"
-popup/item_2/id = 4
-popup/item_3/text = "51200"
-popup/item_3/id = 5
+item_count = 6
+popup/item_0/text = "256"
+popup/item_0/id = 0
+popup/item_1/text = "512"
+popup/item_1/id = 1
+popup/item_2/text = "5120"
+popup/item_2/id = 2
+popup/item_3/text = "15360"
+popup/item_3/id = 3
+popup/item_4/text = "25600"
+popup/item_4/id = 4
+popup/item_5/text = "51200"
+popup/item_5/id = 5
 
 [node name="SimParameters" type="GridContainer" parent="."]
 offset_left = 836.0
@@ -256,6 +254,7 @@ horizontal_alignment = 2
 [node name="SliderSpeed" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 0.5
 step = 0.01
 value = 0.25
@@ -276,49 +275,10 @@ horizontal_alignment = 2
 [node name="SliderMovementScaling" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 min_value = 0.1
 max_value = 4.0
 step = 0.1
-value = 1.0
-
-[node name="LabelDrawSize" type="Label" parent="SimParameters"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "DRAW SIZE"
-horizontal_alignment = 2
-
-[node name="LabelDrawSizeValue" type="Label" parent="SimParameters"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "0"
-horizontal_alignment = 2
-
-[node name="SliderDrawSize" type="HSlider" parent="SimParameters"]
-unique_name_in_owner = true
-layout_mode = 2
-min_value = 1.0
-max_value = 5.0
-value = 5.0
-
-[node name="LabelCollideModifier" type="Label" parent="SimParameters"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "COLLIDE MOD"
-horizontal_alignment = 2
-
-[node name="LabelCollideModifierValue" type="Label" parent="SimParameters"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-text = "0"
-horizontal_alignment = 2
-
-[node name="SliderCollideModifier" type="HSlider" parent="SimParameters"]
-unique_name_in_owner = true
-layout_mode = 2
-max_value = 5.0
-step = 0.5
 value = 1.0
 
 [node name="LabelCollideRadius" type="Label" parent="SimParameters"]
@@ -354,6 +314,7 @@ horizontal_alignment = 2
 [node name="SliderDampen" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 min_value = 0.7
 max_value = 1.0
 step = 0.01
@@ -375,6 +336,7 @@ horizontal_alignment = 2
 [node name="SliderMinSpeed" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 5.0
 step = 0.1
 value = 0.5
@@ -395,6 +357,7 @@ horizontal_alignment = 2
 [node name="SliderMaxSpeed" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 min_value = 2.0
 max_value = 1000.0
 value = 1000.0
@@ -415,6 +378,7 @@ horizontal_alignment = 2
 [node name="SliderMovementRandomness" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 0.25
 step = 0.01
 value = 0.01
@@ -435,6 +399,7 @@ horizontal_alignment = 2
 [node name="SliderCenterPull" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 0.1
 step = 0.01
 value = 0.01
@@ -464,6 +429,7 @@ horizontal_alignment = 2
 [node name="SliderVisionRadius" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 min_value = 10.0
 max_value = 500.0
 step = 5.0
@@ -485,6 +451,7 @@ horizontal_alignment = 2
 [node name="SliderAlignmentForce" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 2.0
 step = 0.1
 value = 1.0
@@ -505,6 +472,7 @@ horizontal_alignment = 2
 [node name="SliderCohesionForce" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 2.0
 step = 0.1
 value = 1.0
@@ -525,6 +493,7 @@ horizontal_alignment = 2
 [node name="SliderSeparationForce" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 3.0
 step = 0.1
 value = 1.0
@@ -554,6 +523,7 @@ horizontal_alignment = 2
 [node name="SliderSenseRadius" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 min_value = 10.0
 max_value = 500.0
 step = 5.0
@@ -575,6 +545,7 @@ horizontal_alignment = 2
 [node name="SliderForceSoftenMultiplier" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 10.0
 step = 0.1
 value = 1.0
@@ -612,6 +583,7 @@ horizontal_alignment = 2
 [node name="SliderMaxForce" type="HSlider" parent="SimParameters"]
 unique_name_in_owner = true
 layout_mode = 2
+mouse_force_pass_scroll_events = false
 max_value = 2000.0
 step = 0.1
 value = 5.0
@@ -672,15 +644,6 @@ text = "1: 1 2 3 4 5
 4: 1 2 3 4 5
 5: 1 2 3 4 5"
 horizontal_alignment = 2
-
-[node name="CheckShowGrid" type="CheckBox" parent="."]
-unique_name_in_owner = true
-offset_left = 699.0
-offset_top = 887.0
-offset_right = 814.0
-offset_bottom = 918.0
-focus_mode = 0
-text = "Show Grid?"
 
 [connection signal="value_changed" from="SliderSimMix" to="." method="_on_slider_sim_mix_value_changed"]
 [connection signal="pressed" from="SimControls/HBoxContainer/ButtonPauseResume" to="." method="_on_button_pause_resume_pressed"]

@@ -1,84 +1,68 @@
 #[compute]
 #version 450
-layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
-shared uint prefix_sum_temp[512]; // adjust size to local_size_x
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+shared uint prefix_sum_temp[256]; // adjust size to local_size_x*local_size_y
+shared uint block_base;
 
 struct MyVec2 { vec2 v; };
 
-// === Input Buffers ===
-layout(set = 0, binding = 0, std430) buffer InPosBuffer {
-    MyVec2 data[];
-} in_pos_buffer;
+// === Input/Output Buffers ===
+layout(rgba32f, set = 0, binding = 0) uniform restrict image2D input_particles; // R=pos.x, G=pos.y, B=vel.x, A=vel.y
+layout(rgba32f, set = 1, binding = 0) uniform restrict image2D output_particles;
 
-layout(set = 0, binding = 1, std430) buffer InVelBuffer {
-    MyVec2 data[];
-} in_vel_buffer;
-
-// Oer Agent Species/type index
-layout(set = 0, binding = 2, std430) buffer InSpeciesBuffer {
-    int data[];
-} in_species_buffer;
-
-// === Output Buffers ===
-layout(set = 0, binding = 3, std430) buffer OutPosBuffer {
-    MyVec2 data[];
-} out_pos_buffer;
-
-layout(set = 0, binding = 4, std430) buffer OutVelBuffer {
-    MyVec2 data[];
-} out_vel_buffer;
+// Per Agent Species/type index
+layout(set = 0, binding = 1, std430) buffer InSpeciesBuffer { int data[]; }   in_species_buffer;
 
 // === Species Interaction Matrix ===
 // (Flattened as species_count x species_count float array)
-layout(set = 0, binding = 5, std430) readonly buffer MatrixBuffer {
+layout(set = 0, binding = 2, std430) readonly buffer MatrixBuffer {
     float data[];
 } interaction_matrix;
 
 // === Collision Buffers ===
 // Per-agent collision counts
-layout(set = 0, binding = 6, std430) buffer CollisionCountBuffer {
+layout(set = 0, binding = 3, std430) buffer CollisionCountBuffer {
     uint count[];
 } collision_count_buffer;
 
 // Per-agent fixed-size collision partner list
-layout(set = 0, binding = 7, std430) buffer CollisionPartnerBuffer {
+layout(set = 0, binding = 4, std430) buffer CollisionPartnerBuffer {
     uint partners[];
 } collision_partner_buffer;
 
 // === Spatial Hashing Buffers ===
 // spatial hashing: per-cell counts
-layout(set = 0, binding = 8, std430) buffer CellCountBuffer {
+layout(set = 0, binding = 5, std430) buffer CellCountBuffer {
     uint cell_counts[]; // length = num_cells
 } cell_count_buffer;
 
 // spatial hashing: per-cell offsets
-layout(set = 0, binding = 9, std430) buffer CellOffsetBuffer {
+layout(set = 0, binding = 6, std430) buffer CellOffsetBuffer {
     uint cell_offsets[]; // length = num_cells
 } cell_offset_buffer;
 
 // spatial hashing: sorted indices: list of agent ids grouped by cell
-layout(set = 0, binding = 10, std430) buffer SortedIndexBuffer {
+layout(set = 0, binding = 7, std430) buffer SortedIndexBuffer {
     uint sorted_indices[]; // length = agents_count
 } sorted_index_buffer;
 
 // spatial hashing: agent cells
-layout(set = 0, binding = 11, std430) buffer AgentCellBuffer {
+layout(set = 0, binding = 8, std430) buffer AgentCellBuffer {
     uint data[];  // length = agents_count
 } agent_cell_buffer;
 
 // spatial hashing: cursor
-layout(set = 0, binding = 12, std430) buffer CursorBuffer {
+layout(set = 0, binding = 9, std430) buffer CursorBuffer {
     uint data[];  // length = num_cells
 } cursor_buffer;
-
-// Render target
-layout(set = 0, binding = 13, rgba32f) uniform image2D OUTPUT_TEXTURE;
 
 // === Parameters ===
 layout(push_constant, std430) uniform Params {
 
     float run_mode;             // determine which logic to run on GPU
     float dt;                   // Timestep
+	float compute_texture_size; // Size of the data texture
+
 	float mix_t;         		// Mix Boids with PLife
     float agents_count;         // Total agent count
     float species_count;        // Number of species
@@ -105,13 +89,8 @@ layout(push_constant, std430) uniform Params {
     float cell_size;        // hashing cell size
     float cells_per_row;    // hashing cells per row
 
-    // --- Rendering & camera ---
-    float draw_radius;          // Agent display size
     float image_size;           // Render target dimension
     float world_size_mult;       // Scales worlds for flocking	
-    float camera_center_x;      // View pan X
-    float camera_center_y;      // View pan Y
-    float zoom;                 // Camera zoom
 } params;
 
 // Clamp vector magnitude
@@ -161,16 +140,22 @@ float apply_force(float f, float dist, float softening, float max_force) {
 
 // Main simulation logic (using spatial grid) + prepare collisions.
 void run_sim() {
-    uint id = gl_GlobalInvocationID.x;
-    if (id >= uint(params.agents_count)) return;
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+	int id = int(uv.y * params.compute_texture_size + uv.x);
 
-    vec2 pos = in_pos_buffer.data[id].v;
-    vec2 vel = in_vel_buffer.data[id].v;
+	if (id >= params.agents_count || uv.x >= params.compute_texture_size || uv.y >= params.compute_texture_size) {
+		return;
+	}
+	vec4 pixel = imageLoad(input_particles, uv);
+
+    vec2 pos = pixel.rg;
+    vec2 vel = pixel.ba;
     int species = in_species_buffer.data[id];
 
     // World and accumulators
     float world_size_d = params.image_size * params.world_size_mult;
     vec2 world_size = vec2(world_size_d);
+
     vec2 align = vec2(0.0);
     vec2 coh   = vec2(0.0);
     vec2 sep   = vec2(0.0);
@@ -200,14 +185,19 @@ void run_sim() {
             uint cell_index = uint(ncy * cpr + ncx);
 
             uint start = cell_offset_buffer.cell_offsets[cell_index];
-            uint count = cell_count_buffer.cell_counts[cell_index];
-            uint end = start + count;
-
+            uint end   = start + cell_count_buffer.cell_counts[cell_index];
+			
             for (uint k = start; k < end; ++k) {
-                uint i = sorted_index_buffer.sorted_indices[k];
-                if (i == id) continue;
+                uint other = sorted_index_buffer.sorted_indices[k];
+                if (other == id) continue;
+				
+				ivec2 other_uv = ivec2(other % int(params.compute_texture_size), other / params.compute_texture_size);
+				vec4 other_pixel = imageLoad(input_particles, other_uv);
+				
+                vec2 other_pos = other_pixel.rg;
+				vec2 other_vel = other_pixel.ba;
+				int other_species = in_species_buffer.data[other];
 
-                vec2 other_pos = in_pos_buffer.data[i].v;
                 vec2 diff = toroidal_diff(pos, other_pos, vec2(world_size_f));
                 float dist = length(diff);
                 //if (dist < 0.0001) continue;
@@ -216,14 +206,15 @@ void run_sim() {
                 // boid behavior
                 if (dist < params.boid_vision_radius) {
                     neighbor_count++;
-                    align += in_vel_buffer.data[i].v;
+                    //align += in_vel_buffer.data[i].v;
+					align += other_vel;
                     coh   += pos + diff;
                     sep  -= diff / (dist * dist);
                 }
 
                 // species interactions
                 if (dist < params.species_interaction_radius) {
-                    int other_species = in_species_buffer.data[i];
+                    //int other_species = in_species_buffer.data[i];
                     float f = interaction_matrix.data[
                         species * uint(params.species_count) + other_species
                     ];
@@ -236,7 +227,7 @@ void run_sim() {
                     uint slot = atomicAdd(collision_count_buffer.count[id], 1u);
                     uint max_collisions = uint(params.max_collisions);
                     if (slot < max_collisions) {
-                        collision_partner_buffer.partners[id * max_collisions + slot] = i;
+                        collision_partner_buffer.partners[id * max_collisions + slot] = other;
                     }
                 }
             }
@@ -264,7 +255,7 @@ void run_sim() {
     }
 
     // Add small random drift
-    accel += random_dir(id + uint(gl_WorkGroupID.x), params.movement_randomness);
+    accel += random_dir(id, params.movement_randomness);
     accel = limit(accel, params.max_force);
 	
 	// Global accel scaling
@@ -285,17 +276,23 @@ void run_sim() {
     apply_border(pos, vel);
 
     // === Output ===
-    out_pos_buffer.data[id].v = pos;
-    out_vel_buffer.data[id].v = vel;
+	imageStore(output_particles, uv, vec4(pos, vel));
 }
 
 
 void resolve_collide() {
-    uint id = gl_GlobalInvocationID.x;
-    if (id >= uint(params.agents_count)) return;
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+	int id = int(uv.y * params.compute_texture_size + uv.x);
+	
+	if (id >= params.agents_count || uv.x >= params.compute_texture_size || uv.y >= params.compute_texture_size) {
+		return;
+	}
+	//vec4 pixel = imageLoad(input_particles, uv);
+	vec4 pixel = imageLoad(output_particles, uv);
 
-    vec2 pos = out_pos_buffer.data[id].v;
-    vec2 vel = out_vel_buffer.data[id].v;
+    vec2 pos = pixel.rg;
+    vec2 vel = pixel.ba;
+    int species = in_species_buffer.data[id];
 
     vec2 correction = vec2(0.0);
     uint contrib_count = 0u;
@@ -311,15 +308,20 @@ void resolve_collide() {
     float per_neighbor_max = col_radius * 2.0; // 0.5;
     float max_move = col_radius * 1.0; // 0.9;
     float apply_frac = 1.0; // 0.5;
-	//float damping = 0.98;
-    //float max_vel_change = length(vec2(col_radius, col_radius));
 
     for (uint s = 0u; s < c; ++s) {
         uint j = collision_partner_buffer.partners[id * max_collisions + s];
         if (j >= uint(params.agents_count) || j == id) continue;
 
-        vec2 other_pos = out_pos_buffer.data[j].v;
-        //vec2 other_vel = out_vel_buffer.data[j].v;
+		uint other = j;
+		if (other == id) continue;
+		
+		ivec2 other_uv = ivec2(other % int(params.compute_texture_size), other / params.compute_texture_size);
+		//vec4 other_pixel = imageLoad(input_particles, other_uv);
+		vec4 other_pixel = imageLoad(output_particles, other_uv);
+		
+		vec2 other_pos = other_pixel.rg;
+		//vec2 other_vel = other_pixel.ba;
 
         vec2 diff = toroidal_diff(pos, other_pos, vec2(world_size_f));
         diff = -diff;
@@ -341,13 +343,6 @@ void resolve_collide() {
             float single_contrib = min(overlap, per_neighbor_max);
             correction += n * single_contrib;
             contrib_count++;
-
-            //float rel_vn = dot(vel - other_vel, n);
-            //if (rel_vn < 0.0) {
-            //    float dv = -rel_vn * damping;
-            //    dv = min(dv, max_vel_change);
-            //    vel -= n * dv;
-            //}
         }
     }
 
@@ -357,124 +352,22 @@ void resolve_collide() {
         pos += correction * apply_frac;
     }
 
-    out_pos_buffer.data[id].v = pos;
-    //out_vel_buffer.data[id].v = vel;
-}
-
-vec3 heatmap_color(float t) {
-    // Clamp between 0 and 1
-    t = clamp(t, 0.0, 1.0);
-
-    // Map t to blue to cyan to green to yellow to red
-    if (t < 0.25) {
-        // Blue to Cyan
-        float k = t / 0.25;
-        return mix(vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 1.0), k);
-    } else if (t < 0.5) {
-        // Cyan to Green
-        float k = (t - 0.25) / 0.25;
-        return mix(vec3(0.0, 1.0, 1.0), vec3(0.0, 1.0, 0.0), k);
-    } else if (t < 0.75) {
-        // Green to Yellow
-        float k = (t - 0.5) / 0.25;
-        return mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), k);
-    } else {
-        // Yellow to Red
-        float k = (t - 0.75) / 0.25;
-        return mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), k);
-    }
-}
-
-vec3 species_color_dynamic(int species) {
-    // Map species index to 0..1 range
-    float t = float(species) / max(float(params.species_count - 1), 1.0);
-    return heatmap_color(t);
-}
-
-void draw_circle(vec2 center, float radius, vec4 color) {
-    ivec2 min_pix = ivec2(floor(center - radius));
-    ivec2 max_pix = ivec2(ceil(center + radius));
-	float r2 = radius * radius;  // squared radius
-    for (int x = min_pix.x; x <= max_pix.x; x++) {
-        for (int y = min_pix.y; y <= max_pix.y; y++) {
-            vec2 diff = vec2(x, y) - center;
-            if (dot(diff, diff) <= r2) {  // squared distance check
-                imageStore(OUTPUT_TEXTURE, ivec2(x, y), color);
-            }
-        }
-    }
-}
-
-void draw_texture() {
-    uint id = gl_GlobalInvocationID.x;
-    if (id >= uint(params.agents_count)) return;
-
-    vec2 curr_pos = out_pos_buffer.data[id].v;   // Current particle position
-    vec2 image_size_vec = vec2(params.image_size, params.image_size);
-    int species = in_species_buffer.data[id];
-	float draw_size = params.draw_radius * params.zoom;
-
-    vec2 rel = curr_pos - vec2(params.camera_center_x, params.camera_center_y);
-    rel *= params.zoom;
-    vec2 screen_pos = rel + image_size_vec * 0.5;
-
-    if (screen_pos.x < -draw_size || screen_pos.x >= image_size_vec.x + draw_size ||
-		screen_pos.y < -draw_size || screen_pos.y >= image_size_vec.y + draw_size) {
-		return;
-    }
-
-    vec3 color = species_color_dynamic(species);
-    //vec3 color = vec3(0.0, 1.0, 0.0);
-
-    // Draw a circle for the particle
-	draw_size = max(draw_size, 1.0);
-    draw_circle(screen_pos, draw_size, vec4(color, 1.0));
-}
-
-void draw_grid() {
-    uint id = gl_GlobalInvocationID.x;
-    uint img_size = uint(params.image_size);
-    uint total_pixels = img_size * img_size;
-    if (id >= total_pixels) return;
-
-    uint px = id % img_size;
-    uint py = id / img_size;
-
-    vec2 pixel = vec2(px, py);
-
-    // Pixel to world
-    vec2 centered = pixel - vec2(params.image_size * 0.5);
-    centered /= params.zoom;
-    vec2 world = centered + vec2(params.camera_center_x, params.camera_center_y);
-
-    // World bounds
-    float half_world = params.image_size * params.world_size_mult * 0.5;
-    if (world.x < -half_world || world.x > half_world ||
-        world.y < -half_world || world.y > half_world) {
-        return;
-    }
-
-    // Grid spacing in world space
-    float cs = params.cell_size;
-    float fx = mod(world.x + half_world, cs);
-    float fy = mod(world.y + half_world, cs);
-
-    // Line thickness
-    float line_thickness = max(1.0 / params.zoom, 1.0);
-
-    // Draw
-    bool vertical   = (fx < line_thickness) || (fx > cs - line_thickness);
-    bool horizontal = (fy < line_thickness) || (fy > cs - line_thickness);
-    if (vertical || horizontal) {
-        imageStore(OUTPUT_TEXTURE, ivec2(px, py), vec4(vec3(0.9),1.0));
-    }
+	//imageStore(output_particles, uv, vec4(pos, vel));
+	imageStore(input_particles, uv, vec4(pos, vel));
 }
 
 void count_cells() {
-    uint id = gl_GlobalInvocationID.x; // compute directly
-    if (id >= uint(params.agents_count)) return;
+	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
+	int id = int(uv.y * params.compute_texture_size + uv.x);
+	
+	if (id >= params.agents_count || uv.x >= params.compute_texture_size || uv.y >= params.compute_texture_size) {
+		return;
+	}
 
-    vec2 p = in_pos_buffer.data[id].v;  // in_pos_buffer
+	vec4 pixel = imageLoad(input_particles, uv);
+	
+	vec2 p = pixel.rg;
+	
     float half_size = params.image_size * params.world_size_mult * 0.5; // matches world_size calc
     float rx = mod(p.x + half_size + params.image_size * params.world_size_mult, params.image_size * params.world_size_mult);
     float ry = mod(p.y + half_size + params.image_size * params.world_size_mult, params.image_size * params.world_size_mult);
@@ -488,8 +381,60 @@ void count_cells() {
     atomicAdd(cell_count_buffer.cell_counts[cell], 1u); // increment per-cell count
 }
 
+void prefix_sum() {
+    const uint L = gl_WorkGroupSize.x * gl_WorkGroupSize.y; // 256u; // adjust size to local_size_x*local_size_y
+    uint tid =
+        gl_LocalInvocationID.y * gl_WorkGroupSize.x +
+        gl_LocalInvocationID.x;
+    uint group_id = gl_WorkGroupID.x;
+    uint num_cells = uint(params.cells_per_row) * uint(params.cells_per_row);
+
+    if (group_id == 0u && tid == 0u) cursor_buffer.data[0] = 0u;
+    barrier();
+
+    uint val = 0u;
+    uint index = group_id * L + tid;
+    if (index < num_cells) val = cell_count_buffer.cell_counts[index];
+    prefix_sum_temp[tid] = val;
+    barrier();
+
+    for (uint offset = 1u; offset < L; offset <<= 1u) {
+        uint step = offset << 1u;
+        uint ix = (tid + 1u) * step - 1u;
+        if (ix < L) prefix_sum_temp[ix] += prefix_sum_temp[ix - offset];
+        barrier();
+    }
+
+    uint block_total = prefix_sum_temp[L - 1u];
+    if (tid == 0u) prefix_sum_temp[L - 1u] = 0u;
+    barrier();
+
+    for (uint offset = L >> 1u; offset >= 1u; offset >>= 1u) {
+        uint step = offset << 1u;
+        uint ix = (tid + 1u) * step - 1u;
+        if (ix < L) {
+            uint t = prefix_sum_temp[ix - offset];
+            prefix_sum_temp[ix - offset] = prefix_sum_temp[ix];
+            prefix_sum_temp[ix] += t;
+        }
+        barrier();
+        if (offset == 1u) break;
+    }
+
+	if (tid == 0u) block_base = atomicAdd(cursor_buffer.data[0], block_total);
+	barrier();
+	uint base = block_base;
+
+    if (index < num_cells) {
+        uint offset_for_cell = base + prefix_sum_temp[tid];
+        cell_offset_buffer.cell_offsets[index] = offset_for_cell;
+        cursor_buffer.data[index] = offset_for_cell;
+    }
+}
+
 void scatter_sorted_indices() {
-    uint id = gl_GlobalInvocationID.x; // compute directly
+	uint width = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+    uint id = gl_GlobalInvocationID.y * width + gl_GlobalInvocationID.x;
 	if (id >= uint(params.agents_count)) return;
 
     uint cell = agent_cell_buffer.data[id]; // agent_cell_buffer
@@ -503,15 +448,13 @@ void main() {
         run_sim();
     } else if (params.run_mode == 1 && params.dt > 0.0) {
         resolve_collide();
-    } else if (params.run_mode == 2) {
-        draw_texture();
-	} else if (params.run_mode == 3) {
-		draw_grid();
 
 	// ---- GPU preprocessing modes ----
-    } else if (params.run_mode == 10) {  // COUNT CELLS
+    } else if (params.run_mode == 10 && params.dt > 0.0) {  // COUNT CELLS
         count_cells();
-    } else if (params.run_mode == 11) {  // SCATTER
+    } else if (params.run_mode == 11 && params.dt > 0.0) {  // PREFIX SUM
+        prefix_sum();
+    } else if (params.run_mode == 12 && params.dt > 0.0) {  // SCATTER
         scatter_sorted_indices();
-    }	
+    }
 }
