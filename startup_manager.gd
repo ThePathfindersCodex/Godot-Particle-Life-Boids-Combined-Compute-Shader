@@ -53,17 +53,17 @@ func generate_matrix_symmetric(count: int, force_range: float) -> PackedFloat32A
 
 # PARTICLE POSITIONS
 func pos_random(owner_node, _i:int, _s:int) -> Vector2:
-	var radius = (owner_node.image_size * owner_node.rand_start_radius_mul) * 0.5
+	var radius = (owner_node.image_size * owner_node.rand_start_radius_mul) # * 2.0
 	return Vector2(randf_range(-radius, radius), randf_range(-radius, radius))
 
 func pos_ring(owner_node, i:int, _s:int) -> Vector2:
 	var center = Vector2.ZERO
-	var radius = min(owner_node.image_size, owner_node.image_size) * owner_node.rand_start_radius_mul * 0.25
+	var radius = min(owner_node.image_size, owner_node.image_size) * owner_node.rand_start_radius_mul # * 2.0
 	var angle = (TAU / owner_node.agent_count) * i
 	return center + Vector2(cos(angle), sin(angle)) * radius
 
 func pos_columns(owner_node, _i:int, s:int) -> Vector2:
-	var band_width = owner_node.image_size / float(owner_node.species_count) * owner_node.rand_start_radius_mul
+	var band_width = owner_node.image_size / float(owner_node.species_count) * owner_node.rand_start_radius_mul * 2.0
 	var half_width = (band_width * owner_node.species_count) * 0.5
 	var x_min = s * band_width
 	var x_max = (s + 1) * band_width
@@ -92,7 +92,7 @@ var spiral_arm_spread = 0.015
 var spiral_base_angle = 0.0
 func setup_spiral_params(owner_node):
 	spiral_center = Vector2.ZERO
-	spiral_max_radius = min(owner_node.image_size, owner_node.image_size) * owner_node.rand_start_radius_mul * 0.5
+	spiral_max_radius = min(owner_node.image_size, owner_node.image_size) * owner_node.rand_start_radius_mul * 2.0
 	spiral_arms = 4
 	spiral_turns = 3.0
 	spiral_arm_spread = 0.015

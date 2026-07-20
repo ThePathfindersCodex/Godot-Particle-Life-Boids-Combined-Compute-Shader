@@ -2,11 +2,10 @@ extends TextureRect
 
 # CONFIG
 var compute_texture_size :int= 256 # Holds up to 256*256 pixel particles
-var viewport_size :int= 800
 var shader_local_size_x := 16
 var shader_local_size_y := 16
-@onready var image_size = compute_texture_size
-var zone_size_mult : int = 20 # wrap around border world size
+var image_size = 800
+var zone_size_mult : int = 10 # wrap around border world size
 var agent_count : int = 1024*15
 var species_count : int = 8
 
@@ -25,8 +24,8 @@ var paused_dt : float = dt # only used for pause/resume feature
 var mix_t: float = 0.5 # [0.0 == full boids; == 1.0 full particle life]
 
 # VISION KERNELS
-var boid_vision_radius : float = 200.0 # 350.0
-var species_interaction_radius : float = 150.0 # 250.0
+var boid_vision_radius : float = 350.0 # 350.0
+var species_interaction_radius : float = 250.0 # 250.0
 
 # BOIDS PARAMETERS
 var alignment_force : float = 1.0
@@ -46,13 +45,9 @@ var min_speed : float = 0.0
 var max_speed : float = 500.0
 var max_force : float = 1000.0
 
-# COLLISION FORCE
-const MAX_COLLISIONS := 64 # 32 # 64 # 128  # tune as needed
-var collision_radius : float = 4.0
-
 # CAMERA
 var camera_center : Vector2 = Vector2.ZERO
-var zoom : float = 0.82 # 0.5
+var zoom : float = 0.1 # 0.5 # 0.17 # 0.82 # 0.5
 const MIN_ZOOM := 0.1
 const MAX_ZOOM := 5.0
 
@@ -82,6 +77,7 @@ var render_material := ShaderMaterial.new()
 
 func _ready():
 	randomize()
+
 	fmt.width = compute_texture_size
 	fmt.height = compute_texture_size
 	fmt.format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
@@ -175,16 +171,6 @@ func rebuild_buffers(data: Dictionary):
 	buffers.append(rdmain.storage_buffer_create(species_bytes.size(), species_bytes))
 	buffers.append(rdmain.storage_buffer_create(interaction_bytes.size(), interaction_bytes))
 
-	# === COLLISION BUFFERS ===
-	# One per agent (collision counts)
-	var count_bytes := PackedByteArray()
-	count_bytes.resize(int(agent_count) * 4) # 4 bytes per uint (zero-filled)
-	buffers.append(rdmain.storage_buffer_create(count_bytes.size(), count_bytes))  # CollisionCountBuffer
-	# agent_count * MAX_COLLISIONS (partner indices)
-	var partners_bytes := PackedByteArray()
-	partners_bytes.resize(int(agent_count) * int(MAX_COLLISIONS) * 4)
-	buffers.append(rdmain.storage_buffer_create(partners_bytes.size(), partners_bytes))  # CollisionPartnerBuffer
-
 	# === SPATIAL HASIHNG BUFFERS ===
 	# Compute Number of Cells
 	var world_size := float(image_size) * float(zone_size_mult) # same as GLSL's world
@@ -228,7 +214,7 @@ func rebuild_buffers(data: Dictionary):
 	render_material.set_shader_parameter("camera_center", camera_center)
 	render_material.set_shader_parameter("zoom", zoom)
 	render_material.set_shader_parameter("compute_texture_size", compute_texture_size)
-	render_material.set_shader_parameter("viewport_size", Vector2(viewport_size, viewport_size))
+	render_material.set_shader_parameter("viewport_size", Vector2(image_size, image_size))
 	%MMI.material = render_material # 2D
 
 	quadmesh.size = Vector2.ONE
@@ -256,7 +242,7 @@ func compute_stage(run_mode:int,input_set,output_set):
 	var group_size = shader_local_size_x * shader_local_size_y # 16*16 = 256
 	
 	# --- texture based passes ---
-	if run_mode in [0,1,10]:
+	if run_mode in [0,10]:
 		global_size_x = int(ceil(float(compute_texture_size) / shader_local_size_x))
 		global_size_y = int(ceil(float(compute_texture_size) / shader_local_size_y))
 
@@ -300,14 +286,13 @@ func compute_stage(run_mode:int,input_set,output_set):
 		max_speed,
 		max_force,
 		
-		collision_radius,
-		MAX_COLLISIONS,
 		cell_size,
 		cells_per_row,
 		
 		float(image_size),
 		float(zone_size_mult),
-		0.0,0.0,0.0
+		#0.0,0.0,0.0
+		0.0
 	])
 	var params_bytes := PackedByteArray()
 	params_bytes.append_array(params.to_byte_array())
@@ -332,13 +317,8 @@ func run_simulation():
 	# zero cell counts
 	var empty_counts_bytes :PackedByteArray
 	empty_counts_bytes.resize(num_cells * 4)
-	rdmain.buffer_update(buffers[4], 0, empty_counts_bytes.size(), empty_counts_bytes)
+	rdmain.buffer_update(buffers[2], 0, empty_counts_bytes.size(), empty_counts_bytes)
 
-	# zero collide counts
-	var empty_collide_counts_bytes :PackedByteArray
-	empty_collide_counts_bytes.resize(agent_count * 4)
-	rdmain.buffer_update(buffers[2], 0, empty_collide_counts_bytes.size(), empty_collide_counts_bytes)
-	
 	# count cells (agents per cell)
 	compute_stage(10,input_set,output_set)  
 	# compute prefix sum
@@ -348,11 +328,8 @@ func run_simulation():
 
 	# ---------- SIMULATION PASSES ----------
 	
-	# run simulation + gather collisions
+	# run simulation
 	compute_stage(0,input_set,output_set) 
-	
-	# collision resolution
-	compute_stage(1,input_set,output_set)  
 	
 	# UPDATE MATERIAL BUFFERS
 	render_material.set_shader_parameter("particle_buffer", textureRD)
@@ -411,38 +388,28 @@ func _create_uniform_set(texture_rd: RID, texture_rd2: RID, _uniform_set: int) -
 	var uniform5 := RDUniform.new()
 	uniform5.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	uniform5.binding = 3
-	uniform5.add_id(buffers[2]) # 3  collision_count_buffer
+	uniform5.add_id(buffers[2]) # Cell counts buffer
 	
 	var uniform6 := RDUniform.new()
 	uniform6.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	uniform6.binding = 4
-	uniform6.add_id(buffers[3]) # 4  collision_partner_buffer
+	uniform6.add_id(buffers[3]) # Cell offsets buffer
 	
 	var uniform7 := RDUniform.new()
 	uniform7.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	uniform7.binding = 5
-	uniform7.add_id(buffers[4]) # Cell counts buffer
+	uniform7.add_id(buffers[4]) # Sorted indices
 	
 	var uniform8 := RDUniform.new()
 	uniform8.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	uniform8.binding = 6
-	uniform8.add_id(buffers[5]) # Cell offsets buffer
+	uniform8.add_id(buffers[5]) # Agent -> cell mapping
 	
 	var uniform9 := RDUniform.new()
 	uniform9.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
 	uniform9.binding = 7
-	uniform9.add_id(buffers[6]) # Sorted indices
+	uniform9.add_id(buffers[6]) # Cursor per cell
 	
-	var uniform10 := RDUniform.new()
-	uniform10.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	uniform10.binding = 8
-	uniform10.add_id(buffers[7]) # Agent -> cell mapping
-	
-	var uniform11 := RDUniform.new()
-	uniform11.uniform_type = RenderingDevice.UNIFORM_TYPE_STORAGE_BUFFER
-	uniform11.binding = 9
-	uniform11.add_id(buffers[8]) # Cursor per cell
-	
-	var new_set = [uniform, uniform2, uniform3, uniform4, uniform5, uniform6, uniform7, uniform8, uniform9, uniform10, uniform11]
+	var new_set = [uniform, uniform2, uniform3, uniform4, uniform5, uniform6, uniform7, uniform8, uniform9]
 	
 	return rdmain.uniform_set_create(new_set, shader, _uniform_set)

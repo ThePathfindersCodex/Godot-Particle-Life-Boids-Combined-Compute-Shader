@@ -26,7 +26,7 @@ void vertex() {
 	vec2 view_pos = (world_pos - camera_center) * zoom;
 	vec2 screen_center = viewport_size * 0.5;
 
-	float radius = 10.0 * zoom;
+	float radius = 20.0 * zoom;
 	vec2 local = VERTEX;
 	local *= radius;
 

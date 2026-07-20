@@ -42,7 +42,6 @@ func _process(_delta):
 	%LabelSenseRadiusValue.text = str(snapped(%ParticleBoids.species_interaction_radius,.01))
 	%LabelForceSoftenMultiplierValue.text = str(snapped(%ParticleBoids.force_softening_mul,.1))
 	%LabelForceSoftenValue.text = str(snapped(%ParticleBoids.force_softening,.01))
-	%LabelCollideRadiusValue.text = str(snapped(%ParticleBoids.collision_radius,.01))
 	%LabelCenterPullValue.text = str(snapped(%ParticleBoids.center_attraction,.01))
 	%LabelMaxForceValue.text = str(snapped(%ParticleBoids.max_force,.01))
 	%LabelCamCenterValue.text = "("+str(snapped(%ParticleBoids.camera_center.x,.1))+ ", " + str(snapped(%ParticleBoids.camera_center.y,.1)) + ")"
@@ -99,7 +98,7 @@ func _on_option_start_interaction_range_item_selected(index: int) -> void:
 	%ParticleBoids.rand_start_interaction_range=index
 
 func _on_option_start_radius_multiplier_item_selected(index: int) -> void:
-	%ParticleBoids.rand_start_radius_mul=index * 2
+	%ParticleBoids.rand_start_radius_mul=index
 
 func _on_option_start_point_count_item_selected(index: int) -> void:
 	%ParticleBoids.start_agent_count=int(%OptionStartPointCount.get_item_text(index))

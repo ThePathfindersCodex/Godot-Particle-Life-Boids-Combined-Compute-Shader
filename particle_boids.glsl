@@ -19,40 +19,29 @@ layout(set = 0, binding = 2, std430) readonly buffer MatrixBuffer {
     float data[];
 } interaction_matrix;
 
-// === Collision Buffers ===
-// Per-agent collision counts
-layout(set = 0, binding = 3, std430) buffer CollisionCountBuffer {
-    uint count[];
-} collision_count_buffer;
-
-// Per-agent fixed-size collision partner list
-layout(set = 0, binding = 4, std430) buffer CollisionPartnerBuffer {
-    uint partners[];
-} collision_partner_buffer;
-
 // === Spatial Hashing Buffers ===
 // spatial hashing: per-cell counts
-layout(set = 0, binding = 5, std430) buffer CellCountBuffer {
+layout(set = 0, binding = 3, std430) buffer CellCountBuffer {
     uint cell_counts[]; // length = num_cells
 } cell_count_buffer;
 
 // spatial hashing: per-cell offsets
-layout(set = 0, binding = 6, std430) buffer CellOffsetBuffer {
+layout(set = 0, binding = 4, std430) buffer CellOffsetBuffer {
     uint cell_offsets[]; // length = num_cells
 } cell_offset_buffer;
 
 // spatial hashing: sorted indices: list of agent ids grouped by cell
-layout(set = 0, binding = 7, std430) buffer SortedIndexBuffer {
+layout(set = 0, binding = 5, std430) buffer SortedIndexBuffer {
     uint sorted_indices[]; // length = agents_count
 } sorted_index_buffer;
 
 // spatial hashing: agent cells
-layout(set = 0, binding = 8, std430) buffer AgentCellBuffer {
+layout(set = 0, binding = 6, std430) buffer AgentCellBuffer {
     uint data[];  // length = agents_count
 } agent_cell_buffer;
 
 // spatial hashing: cursor
-layout(set = 0, binding = 9, std430) buffer CursorBuffer {
+layout(set = 0, binding = 7, std430) buffer CursorBuffer {
     uint data[];  // length = num_cells
 } cursor_buffer;
 
@@ -82,9 +71,6 @@ layout(push_constant, std430) uniform Params {
     float min_speed;            // Clamp lower speed
     float max_speed;            // Clamp upper speed
     float max_force;            // Limit total applied force
-
-    float collision_radius;           // Physical collision distance
-	float max_collisions;         // how many collides to resolve
 
     float cell_size;        // hashing cell size
     float cells_per_row;    // hashing cells per row
@@ -221,15 +207,6 @@ void run_sim() {
                     vec2 dir = diff / dist;
                     interact += dir * apply_force(f, dist, params.force_softening, params.max_force);
                 }
-
-                // Collision recorded into collision buffers
-                if (dist < params.collision_radius) {
-                    uint slot = atomicAdd(collision_count_buffer.count[id], 1u);
-                    uint max_collisions = uint(params.max_collisions);
-                    if (slot < max_collisions) {
-                        collision_partner_buffer.partners[id * max_collisions + slot] = other;
-                    }
-                }
             }
         }
     }
@@ -277,83 +254,6 @@ void run_sim() {
 
     // === Output ===
 	imageStore(output_particles, uv, vec4(pos, vel));
-}
-
-
-void resolve_collide() {
-	ivec2 uv = ivec2(gl_GlobalInvocationID.xy);
-	int id = int(uv.y * params.compute_texture_size + uv.x);
-	
-	if (id >= params.agents_count || uv.x >= params.compute_texture_size || uv.y >= params.compute_texture_size) {
-		return;
-	}
-	//vec4 pixel = imageLoad(input_particles, uv);
-	vec4 pixel = imageLoad(output_particles, uv);
-
-    vec2 pos = pixel.rg;
-    vec2 vel = pixel.ba;
-    int species = in_species_buffer.data[id];
-
-    vec2 correction = vec2(0.0);
-    uint contrib_count = 0u;
-
-    uint max_collisions = uint(params.max_collisions);
-    uint raw_count = collision_count_buffer.count[id];
-    uint c = min(raw_count, max_collisions);
-
-    if (c > uint(params.agents_count)) c = uint(params.agents_count);
-
-    float world_size_f = params.image_size * params.world_size_mult;
-    float col_radius = params.collision_radius;
-    float per_neighbor_max = col_radius * 2.0; // 0.5;
-    float max_move = col_radius * 1.0; // 0.9;
-    float apply_frac = 1.0; // 0.5;
-
-    for (uint s = 0u; s < c; ++s) {
-        uint j = collision_partner_buffer.partners[id * max_collisions + s];
-        if (j >= uint(params.agents_count) || j == id) continue;
-
-		uint other = j;
-		if (other == id) continue;
-		
-		ivec2 other_uv = ivec2(other % int(params.compute_texture_size), other / params.compute_texture_size);
-		//vec4 other_pixel = imageLoad(input_particles, other_uv);
-		vec4 other_pixel = imageLoad(output_particles, other_uv);
-		
-		vec2 other_pos = other_pixel.rg;
-		//vec2 other_vel = other_pixel.ba;
-
-        vec2 diff = toroidal_diff(pos, other_pos, vec2(world_size_f));
-        diff = -diff;
-
-        float dist = length(diff);
-        if (dist < 1e-6) {
-            float angle = float((id + 37u) % 1024u) * 0.0062831853;
-            vec2 n = vec2(cos(angle), sin(angle));
-            float overlap = col_radius;
-            float single_contrib = min(overlap, per_neighbor_max);
-            correction += n * single_contrib;
-            contrib_count++;
-            continue;
-        }
-
-        if (dist < col_radius) {
-            vec2 n = diff / dist;
-            float overlap = col_radius - dist;
-            float single_contrib = min(overlap, per_neighbor_max);
-            correction += n * single_contrib;
-            contrib_count++;
-        }
-    }
-
-    if (contrib_count > 0u) {
-        correction /= float(contrib_count);
-        correction = clamp(correction, -vec2(max_move), vec2(max_move));
-        pos += correction * apply_frac;
-    }
-
-	//imageStore(output_particles, uv, vec4(pos, vel));
-	imageStore(input_particles, uv, vec4(pos, vel));
 }
 
 void count_cells() {
@@ -446,8 +346,6 @@ void main() {
 	// ---- GPU processing modes ----
     if (params.run_mode == 0 && params.dt > 0.0) {
         run_sim();
-    } else if (params.run_mode == 1 && params.dt > 0.0) {
-        resolve_collide();
 
 	// ---- GPU preprocessing modes ----
     } else if (params.run_mode == 10 && params.dt > 0.0) {  // COUNT CELLS
